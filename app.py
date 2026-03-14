@@ -337,7 +337,7 @@ class ProjectManager:
         self.session_start_time = None
 
     def sanitize_name(self, name):
-        return re.sub(r'[\\/*?:"<>|]', "", name).strip().replace(" ", "_")
+        return re.sub(r'[\\/*?:"<>|]', "", name).strip().strip(".").replace(" ", "_")
         
     def get_current_total_time(self):
         if self.session_start_time and self.current_project:
