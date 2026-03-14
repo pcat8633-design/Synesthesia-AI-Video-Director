@@ -1321,7 +1321,7 @@ css = """
 with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(), css=css) as app:
     pm_state = gr.State(ProjectManager()) 
     
-    gr.Markdown("# 🎬 Synesthesia AI Video Director")
+    gr.Image(value="Synesthesiatransparent.png", show_label=False, container=False, height=80)
     current_proj_var = gr.State("")
     
 # --- TAB 1: SETUP ---
@@ -1839,7 +1839,7 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
         </a>
         """)
         gr.Markdown("""
-# 🎬 AI Music Video Director — User Guide
+# Synesthesia AI Video Director — User Guide
 
 This application helps you create AI-generated music videos by combining audio analysis, LLM-generated video prompts, and the LTX Desktop video generation engine.
 
@@ -1859,16 +1859,22 @@ Paste your **lyrics** in the text box. These are saved with the project and hand
 
 ### Step 1 — Build the Timeline
 
-Click *Scan Vocals & Build Timeline* to analyse the vocals file. The app detects silence gaps and divides the audio into two shot types:
+Choose a **Mode** from the dropdown to control how the shot timeline is constructed:
 
-- **Vocal shots** — spans where singing is detected
-- **Action shots** — silent gaps between vocal phrases
+| Mode | Description |
+|------|-------------|
+| **Intercut** (default) | Scans the vocals audio for silence gaps and creates alternating **Vocal** shots (singing detected) and **Action** shots (silent gaps). Requires a vocals audio file. The silence-detection sliders are only active in this mode. |
+| **All Vocals** | Divides the entire audio duration into **Vocal**-type shots only. No silence detection is performed. Ideal for performance-focused music videos where every shot features the singer/band. |
+| **All Action** | Divides the entire audio duration into **Action**-type shots only. No silence detection is performed. Ideal for narrative or visual-only videos that don't require lip-sync. |
+| **Scripted** | No audio file is needed. You specify a **Total Duration** or **Number of Shots** instead. All shots are Action type. UI labels change from "Singer" to "Main Character", making this mode suited for short narrative films without music. |
 
-Adjust the sliders to fine-tune detection:
-- **Min Silence (ms)** — how long a pause must be to count as silence
-- **Silence Threshold (dB)** — how quiet audio must be to be treated as silent
-- **Action Shot Mode** — *Fixed* uses the Min Duration for every action shot; *Random* picks a random length between Min and Max
-- **Min/Max Duration** — the allowed range for action shot lengths (1–5 seconds)
+Click *Scan Vocals & Build Timeline* (or *Build Timeline* in non-Intercut modes) to generate the shot list.
+
+Adjust the sliders to fine-tune detection (Intercut mode) and shot lengths:
+- **Min Silence (ms)** — how long a pause must be to count as silence (Intercut only)
+- **Silence Threshold (dB)** — how quiet audio must be to be treated as silent (Intercut only)
+- **Shot Duration Mode** — *Fixed* uses the Min Duration for every shot; *Random* picks a random length between Min and Max
+- **Min/Max Duration** — the allowed range for shot lengths (1–5 seconds)
 
 All shot durations are automatically locked to LTX-compatible frame counts (1–5 second increments at 24 fps).
 
