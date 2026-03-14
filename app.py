@@ -1316,12 +1316,17 @@ css = """
     overflow-y: auto !important;
     max-height: 600px !important;
 }
+.header-row {
+    align-items: center !important;
+}
 """
 
 with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(), css=css) as app:
     pm_state = gr.State(ProjectManager()) 
     
-    gr.Image(value="Synesthesiatransparent.png", show_label=False, container=False, height=80)
+    with gr.Row(elem_classes="header-row"):
+        gr.Image(value="Synesthesiatransparent.png", show_label=False, container=False, height=80, min_width=160)
+        gr.Markdown("# Synesthesia AI Video Director")
     current_proj_var = gr.State("")
     
 # --- TAB 1: SETUP ---
