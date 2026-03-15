@@ -2069,6 +2069,28 @@ Click *Save Settings* to apply immediately. Settings are stored globally in `glo
 
 ---
 
+## LTX Desktop VRAM Bypass
+
+LTX Desktop may refuse to run if your GPU VRAM is below its default threshold. You can bypass this on a **fresh install** (before launching the app for the first time):
+
+1. Navigate to `LTX Desktop\\resources\\backend\\runtime_config\\`
+2. Open `runtime_policy.py` in a text editor
+3. Find the Windows VRAM check and lower the threshold to below your available VRAM:
+
+```python
+if system == "Windows":
+    if not cuda_available:
+        return True
+    if vram_gb is None:
+        return True
+    return vram_gb < 22
+```
+
+4. Change `22` to a value less than or equal to your GPU's VRAM (e.g. `< 8` for an 8 GB card)
+5. Save the file, then start LTX Desktop — it will work, though generation may be slower
+
+---
+
 ## Cloud LLM Prompt Template
 
 If you prefer not to run a local LLM, you can use a cloud-based model (such as Claude, ChatGPT, etc.) to generate your video prompts. Here's how:

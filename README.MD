@@ -10,6 +10,17 @@ You will need two external applications running alongside this tool:
 
 - **[LTX Desktop](https://ltx.io/ltx-desktop)** — Local AI video generation engine. Start the LTX Desktop server on the default port (`http://127.0.0.1:8000`). LTX Desktop generates the actual video clips from the prompts.
 
+> **LTX Desktop VRAM Bypass:** LTX Desktop may refuse to run if your GPU VRAM is below its default threshold. You can bypass this on a **fresh install** (before launching the app for the first time) by editing `runtime_policy.py` located in `LTX Desktop\resources\backend\runtime_config`. Find the Windows VRAM check and lower the threshold to below your available VRAM:
+> ```python
+> if system == "Windows":
+>     if not cuda_available:
+>         return True
+>     if vram_gb is None:
+>         return True
+>     return vram_gb < 22
+> ```
+> Change `22` to a value less than or equal to your GPU's VRAM (e.g. `< 8` for an 8 GB card). Then start the app — it will work, though generation may be slower.
+
 You will also need the following installed on your system:
 
 - **[Python](https://www.python.org/downloads/)** — Version 3.8 or higher. During installation on Windows, make sure to check **"Add Python to PATH"**.
