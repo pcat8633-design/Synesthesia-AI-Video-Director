@@ -14,10 +14,30 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Pulling latest changes from GitHub...
-git pull
+echo Fetching latest release tags from GitHub...
+git fetch --tags --force
 if errorlevel 1 (
-    echo ERROR: Git pull failed. Check your internet connection.
+    echo ERROR: Git fetch failed. Check your internet connection.
+    pause
+    exit /b 1
+)
+
+:: Find the latest release tag
+set LATEST_TAG=
+for /f "delims=" %%t in ('git tag --sort=-version:refname') do (
+    if not defined LATEST_TAG set LATEST_TAG=%%t
+)
+
+if not defined LATEST_TAG (
+    echo ERROR: No release tags found in repository.
+    pause
+    exit /b 1
+)
+
+echo Latest release: %LATEST_TAG%
+git checkout %LATEST_TAG%
+if errorlevel 1 (
+    echo ERROR: Failed to checkout %LATEST_TAG%.
     pause
     exit /b 1
 )
