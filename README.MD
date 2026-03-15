@@ -67,7 +67,7 @@ For Windows users who prefer not to use the command line, batch files are includ
 3. **Install Python dependencies**
 
    ```bash
-   pip install gradio pandas pydub moviepy requests keyboard
+   pip install -r requirements.txt
    ```
 
    > **Note:** `pydub` requires [FFmpeg](https://ffmpeg.org/) to be installed and available on your system PATH.
