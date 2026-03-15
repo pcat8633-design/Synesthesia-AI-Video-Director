@@ -36,7 +36,7 @@ echo Activating virtual environment...
 call venv\Scripts\activate.bat
 
 echo Installing dependencies...
-pip install gradio pandas pydub moviepy requests keyboard
+pip install gradio pandas pydub "moviepy<2" requests keyboard
 if errorlevel 1 (
     echo ERROR: Failed to install dependencies.
     pause

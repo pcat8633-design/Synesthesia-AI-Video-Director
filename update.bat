@@ -32,7 +32,7 @@ if errorlevel 1 (
 )
 
 echo Updating dependencies...
-pip install --upgrade gradio pandas pydub moviepy requests keyboard
+pip install --upgrade gradio pandas pydub requests keyboard && pip install "moviepy<2"
 if errorlevel 1 (
     echo ERROR: Failed to update dependencies.
     pause
