@@ -1219,12 +1219,10 @@ def advanced_batch_video_generation(mode, target_versions, resolution, vocal_mod
         elif mode == "Generate all Vocal Shots":
             shot_ids = df[df['Type'] == 'Vocal']['Shot_ID'].tolist()
         elif mode == "Generate Remaining Shots":
-            completed_ids = {
-                os.path.basename(p).split('_')[0].upper()
-                for p, _ in get_project_videos(pm)
-            }
-            shot_ids = [sid for sid in df['Shot_ID'].tolist()
-                        if str(sid).upper() not in completed_ids]
+            shot_ids = [
+                sid for sid in df['Shot_ID'].tolist()
+                if get_video_count_for_shot(sid, current_gallery) < target_versions
+            ]
         else:
             shot_ids = df['Shot_ID'].tolist()
         
