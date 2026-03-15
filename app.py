@@ -358,8 +358,7 @@ class LLMBridge:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            "temperature": temperature,
-            "max_tokens": 8000
+            "temperature": temperature
         }
         try:
             resp = requests.post(url, json=payload, timeout=120)
