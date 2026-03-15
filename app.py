@@ -22,6 +22,12 @@ import subprocess
 import base64
 import keyboard  # Requires: pip install keyboard
 
+# Compatibility shim: Pillow 10.0+ removed PIL.Image.ANTIALIAS (replaced by LANCZOS),
+# but moviepy 1.x still references it internally during clip.resize().
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
 # ==========================================
 # WINDOWS ASYNCIO PATCH (Fixes WinError 10054)
 # ==========================================
