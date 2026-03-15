@@ -472,18 +472,30 @@ class ProjectManager:
 
             if 'Type' not in new_df.columns:
                  return "❌ Error: CSV is missing 'Type' column.", self.df
-                 
-            type_mismatch = new_df['Type'] != curr_df['Type']
-            if type_mismatch.any():
-                bad_shots = curr_df[type_mismatch].index.tolist()
-                return f"❌ Error: Shot 'Type' mismatch for shots: {', '.join(map(str, bad_shots))}", self.df
+
+            valid_types = {"Vocal", "Action"}
+            invalid_types = set(new_df['Type'].unique()) - valid_types
+            if invalid_types:
+                return f"❌ Error: Invalid Type values: {', '.join(map(str, invalid_types))}. Must be 'Vocal' or 'Action'.", self.df
+
+            type_changed = new_df['Type'] != curr_df['Type']
+            changed_shots = curr_df[type_changed].index.tolist()
+
+            if type_changed.any():
+                curr_df['Type'] = new_df['Type']
 
             if 'Video_Prompt' in new_df.columns:
                 curr_df['Video_Prompt'] = new_df['Video_Prompt']
                 self.df = curr_df.reset_index()
                 self.save_data()
+                if changed_shots:
+                    return f"✅ CSV imported. Type changed for: {', '.join(map(str, changed_shots))}. Prompts updated.", self.df
                 return "✅ CSV Uploaded & Verified. Prompts successfully updated.", self.df
             else:
+                if changed_shots:
+                    self.df = curr_df.reset_index()
+                    self.save_data()
+                    return f"✅ Type changed for: {', '.join(map(str, changed_shots))}.", self.df
                 return "❌ Error: 'Video_Prompt' column not found in uploaded CSV.", self.df
 
         except Exception as e:
