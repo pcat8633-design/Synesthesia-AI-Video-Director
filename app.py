@@ -53,9 +53,9 @@ REQUIRED_COLUMNS = [
 ]
 
 RESOLUTION_MAP = {
-    "540p": (960, 512),
-    "720p": (1280, 704),
-    "1080p": (1920, 1088)
+    "540p": (960, 540),
+    "720p": (1280, 720),
+    "1080p": (1920, 1080)
 }
 
 DEFAULT_CONCEPT_PROMPT = (
@@ -1285,7 +1285,21 @@ def assemble_video(full_song_path, resolution, pm, fallback_mode=False):
     df = df.sort_values(by="Start_Time")
     expected_cursor = 0.0
     
-    target_size = RESOLUTION_MAP.get(resolution, (1920, 1080))
+    # Detect target resolution from the first available video clip
+    # LTX output resolution varies (multiples of 32, differs with/without audio)
+    target_size = None
+    for _, r in df.iterrows():
+        vp = r.get('Video_Path')
+        if vp and pd.notna(vp) and os.path.exists(str(vp)):
+            try:
+                probe = VideoFileClip(str(vp))
+                target_size = tuple(probe.size)
+                probe.close()
+                break
+            except:
+                pass
+    if target_size is None:
+        target_size = RESOLUTION_MAP.get(resolution, (1920, 1080))
 
     for index, row in df.iterrows():
         vid_path = row.get('Video_Path')

@@ -9,15 +9,9 @@ Single-file Gradio application (`app.py`) that orchestrates:
 
 ## Critical: LTX Desktop Resolution Handling
 
-LTX Desktop generates videos at resolutions that are **multiples of 32** for optimal GPU processing. The actual output resolutions do NOT match standard video resolutions:
+LTX Desktop generates videos at resolutions that are **multiples of 32** for optimal GPU processing. The actual output resolutions do NOT match standard video resolutions, and they **vary depending on whether audio is attached** to the clip (Vocal vs Action shots produce different resolutions at the same preset). For example, 540p without audio = 960x512, but 540p with audio = 960x576.
 
-| Preset | Standard | LTX Actual |
-|--------|----------|------------|
-| 540p   | 960x540  | 960x512    |
-| 720p   | 1280x720 | 1280x704   |
-| 1080p  | 1920x1080| 1920x1088  |
-
-The `RESOLUTION_MAP` in `app.py` must use the LTX actual values. Using standard resolutions causes the assembly `resize` to distort frames, producing visible tearing artifacts.
+Because LTX output resolutions are unpredictable, `RESOLUTION_MAP` uses standard resolutions (for UI labels and API requests only). The `assemble_video` function **dynamically detects** the target resolution by reading the first available video clip's actual dimensions. All other clips are resized to match. Do NOT hardcode LTX output resolutions.
 
 ## Dependencies
 
