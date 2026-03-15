@@ -275,7 +275,8 @@ def get_base64_image(image_path):
     with open(image_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode('utf-8')
 
-logo_base64 = get_base64_image("Synesthesiatransparent.png")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+logo_base64 = get_base64_image(os.path.join(_SCRIPT_DIR, "Synesthesiatransparent.png"))
 
 # We combine the logo and title into one flexbox div with a hardcoded min-width
 header_html = f'''
@@ -284,8 +285,6 @@ header_html = f'''
     <h1 style="margin: 0; padding-bottom: 5px;">Synesthesia AI Video Director</h1>
 </div>
 '''
-
-logo_base64 = get_base64_image("Synesthesiatransparent.png")
 
 def get_file_path(file_obj):
     """Safely extracts a file path from a Gradio file component."""
@@ -1215,8 +1214,12 @@ def advanced_batch_video_generation(mode, target_versions, resolution, vocal_mod
         
         for shot_id in shot_ids:
             if pm.stop_video_generation: break
-            
-            row = df[df['Shot_ID'] == shot_id].iloc[0]
+
+            matching = df[df['Shot_ID'] == shot_id]
+            if matching.empty:
+                yield current_gallery, None, f"⚠️ Skipped {shot_id}: Not found in DataFrame."
+                continue
+            row = matching.iloc[0]
 
             if mode == "Regenerate all Shots":
                 vid_dir = pm.get_path("videos")
@@ -1334,21 +1337,22 @@ def assemble_video(full_song_path, resolution, pm, fallback_mode=False):
     
     out_path = os.path.join(pm.get_path("renders"), f"final_cut_{time_str}.mp4")
     
-    final.write_videofile(
-        out_path, fps=24, codec='libx264', audio_codec='aac',
-        temp_audiofile=os.path.join(pm.get_path("renders"), "temp_audio.m4a"),
-        remove_temp=True,
-        ffmpeg_params=["-ar", "44100"]
-    )
-    
-    final.close()
-    if audio is not None:
-        try: audio.close()
-        except: pass
-    for c in clips_to_close:
-        try: c.close()
-        except: pass
-        
+    try:
+        final.write_videofile(
+            out_path, fps=24, codec='libx264', audio_codec='aac',
+            temp_audiofile=os.path.join(pm.get_path("renders"), "temp_audio.m4a"),
+            remove_temp=True,
+            ffmpeg_params=["-ar", "44100"]
+        )
+    finally:
+        final.close()
+        if audio is not None:
+            try: audio.close()
+            except: pass
+        for c in clips_to_close:
+            try: c.close()
+            except: pass
+
     return out_path
 
 # ==========================================
@@ -1840,13 +1844,14 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
                 
             paths_str = pm.df.loc[row_idx[0], "All_Video_Paths"]
             if not paths_str or pd.isna(paths_str): paths = []
-            else: paths = paths_str.split(",")
-            
+            else: paths = [p.strip() for p in paths_str.split(",") if p.strip()]
+
             col_updates = []
             vid_updates = []
             path_updates = []
-            
+
             active_path = pm.df.loc[row_idx[0], "Video_Path"]
+            if pd.isna(active_path): active_path = ""
             
             for i in range(5):
                 if i < len(paths):
@@ -2145,23 +2150,21 @@ Lyrics: [insert lyrics here]
 
         return (
             msg, time_str, df, lyrics, v_path, s_path,
-            settings.get("min_silence", 700), settings.get("silence_thresh", -45),
+            gr.update(value=settings.get("min_silence", 700), visible=is_intercut),  # min_silence_sl (value + visibility)
+            gr.update(value=settings.get("silence_thresh", -45), visible=is_intercut),  # silence_thresh_sl (value + visibility)
             settings.get("shot_mode", "Random"), settings.get("min_dur", 2), settings.get("max_dur", 4),
             settings.get("llm_model", "qwen3-vl-8b-instruct-abliterated-v2.0"), settings.get("rough_concept", ""),
             settings.get("plot", ""),
             settings.get("prompt_template", DEFAULT_CONCEPT_PROMPT),
-            settings.get("performance_desc", ""),
+            gr.update(value=settings.get("performance_desc", ""), label="Main Character and Setting Description" if is_scripted else "Singer, Band, and Venue Description (Also used as Prompt for Vocal Shots)"),  # performance_desc_in (value + label)
             name,
             gal_vids, gr.update(value="Start Batch Generation", variant="primary"),
             loaded_mode,
             settings.get("scripted_total_dur", 60),
             settings.get("scripted_shot_count", 0),
-            gr.update(visible=is_intercut),  # min_silence_sl
-            gr.update(visible=is_intercut),  # silence_thresh_sl
             gr.update(visible=is_scripted),  # scripted_duration_row
             gr.update(value="1. Build Timeline" if not is_intercut else "1. Scan Vocals & Build Timeline"),  # scan_btn
             gr.update(label="Main Character's Gender (Optional)" if is_scripted else "Singer Gender (Optional)"),  # singer_gender_in
-            gr.update(label="Main Character and Setting Description" if is_scripted else "Singer, Band, and Venue Description (Also used as Prompt for Vocal Shots)"),  # performance_desc_in
             gr.update(value="Generate Main Character & Setting Desc" if is_scripted else "Generate Singer, Band & Venue Desc"),  # gen_performance_btn
             # LLM prompt templates
             settings.get("plot_sys_prompt_music", DEFAULT_PLOT_SYSTEM_PROMPT_MUSIC),
@@ -2244,8 +2247,8 @@ Lyrics: [insert lyrics here]
             current_proj_var,
             vid_gallery, vid_gen_start_btn,
             video_mode_drp, scripted_total_dur, scripted_shot_count,
-            min_silence_sl, silence_thresh_sl, scripted_duration_row, scan_btn,
-            singer_gender_in, performance_desc_in, gen_performance_btn,
+            scripted_duration_row, scan_btn,
+            singer_gender_in, gen_performance_btn,
             # LLM prompt templates
             plot_sys_prompt_in, plot_user_template_in,
             plot_sys_prompt_scripted_in, plot_user_template_scripted_in,
@@ -2422,4 +2425,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"⚠️ Could not register hotkey 'ctrl+r'. Run script as admin or ensure 'keyboard' module is installed. Error: {e}")
         
-    app.launch(allowed_paths=["projects"])
+    app.launch(allowed_paths=[os.path.join(os.path.dirname(os.path.abspath(__file__)), "projects")])
