@@ -1366,7 +1366,7 @@ def assemble_video(full_song_path, resolution, pm, fallback_mode=False):
             out_path, fps=24, codec='libx264', audio_codec='aac',
             temp_audiofile=os.path.join(pm.get_path("renders"), "temp_audio.m4a"),
             remove_temp=True,
-            ffmpeg_params=["-ar", "44100"]
+            ffmpeg_params=["-pix_fmt", "yuv420p", "-ar", "44100"]
         )
     finally:
         final.close()
