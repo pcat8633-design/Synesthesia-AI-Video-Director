@@ -1992,6 +1992,47 @@ Click *Save Settings* to apply immediately. Settings are stored globally in `glo
 4. **Use Regenerate AND Prompt** on shots you're unhappy with — sometimes a fresh LLM pass produces a much better visual concept.
 5. **Strict vs. Fallback assembly** — use Fallback mode to preview your edit before all shots are done, then switch to Strict for the final render.
 6. **Hotkey** — press `Ctrl+R` in the terminal window to restart the application quickly without losing your project data.
+
+---
+
+## Cloud LLM Prompt Template
+
+If you prefer not to run a local LLM, you can use a cloud-based model (such as Claude, ChatGPT, etc.) to generate your video prompts. Here's how:
+
+1. **Export** your shot list from Tab 2 using the **Export CSV** button.
+2. **Open** your preferred cloud LLM in a browser.
+3. **Attach** the exported shot list file to your message.
+4. **Paste** the template below into the message, filling in the bracketed placeholders with your own details.
+5. **Send** the message and wait for the LLM to return the completed shot list.
+6. **Import** the completed file back into Synesthesia using the **Import CSV** button on Tab 2.
+
+### Template (copy and paste this into your cloud LLM)
+
+```
+Create a music video via AI video prompts for the following song. See the attached shot list with durations and frame counts. We need to tell a coherent story using the shots labeled "action" in the type column. Return the shot list file with each "Video_Prompt" field filled out.
+
+The AI video prompt for the vocal shots should always be very similar to the following as we cut to the live performance. We need to focus on consistency and always being closeup so the lip-sync model has enough pixels to work with.
+
+"Handheld dynamic closeup shot of a [describe lead singer here] Dynamic camera movement with slight handheld shake, shallow depth of field, dramatic chiaroscuro lighting, 85mm lens, 24fps, high contrast, crowd silhouettes, energetic atmosphere, cinematic color grading, [describe color palette here]"
+
+Follow the LTX prompt guide to create each "action" AI video model prompt:
+
+- Establish the shot. Use cinematography terms that match your preferred film genre. Include aspects like scale or specific category characteristics to further refine the style you're looking for.
+- Set the scene. Describe lighting conditions, color palette, surface textures, and atmosphere to shape the mood.
+- Describe the action. Write the core action as a natural sequence, flowing from beginning to end.
+- Define your character(s). Include age, hairstyle, clothing, and distinguishing details. Express emotions through physical cues.
+- Identify camera movement(s). Specify when the view should shift and how. Including how subjects or objects appear after the camera motion gives the model a better idea of how to finish the motion.
+- Keep your prompt in a single flowing paragraph to give the model a cohesive scene to work with.
+- Use present tense verbs to describe movement and action.
+- Match your detail to the shot scale. Closeups need more precise detail than wide shots.
+- When describing camera movement, focus on the camera's relationship to the subject.
+- You should expect to write 4 to 8 descriptive sentences to cover all the key aspects of the prompt.
+
+Lead Singer's gender: [insert gender description here]
+Story Idea: [insert story idea here]
+Genre: [insert genre tags here]
+Lyrics: [insert lyrics here]
+```
         """)
 
 # ==========================================
