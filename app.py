@@ -194,9 +194,11 @@ DEFAULT_PLOT_USER_TEMPLATE_SCRIPTED = (
 DEFAULT_PERF_SYSTEM_PROMPT_MUSIC = "You are a casting director and set designer."
 DEFAULT_PERF_USER_TEMPLATE_MUSIC = (
     "Concept: {concept}\nPlot: {plot}\n{gender_instruction}\n"
-    "Task: Describe the physical appearance and style of the lead singer, specifically for an AI video generation model. "
-    "Start with the phrase 'Handheld dynamic closeup shot of'. Do not include any details about the character that would be "
-    "out of view in a close-up shot. Keep it concise (2-3 sentences)."
+    "Task: Invent and sescribe the physical appearance, proper name, age, hair, clothing, and style of a lead singer for the above song, specifically for an AI video generation model. "
+    "Start with the phrase 'Handheld dynamic closeup shot of'. Do not include any details about the character that would be out of view in a close-up shot. "
+    "End the description with; [name of singer] is careful to enunciate each word to the camera to account for their deaf sister's lip reading. "
+    "Shot with a dynamic camera movement and slight handheld shake, shallow depth of field, dramatic chiaroscuro lighting, 85mm lens, 24fps, high contrast, crowd silhouettes, energetic atmosphere, cinematic color grading, [describe color pallet here] "
+    "Keep it concise (5-6 sentences)."
 )
 DEFAULT_PERF_SYSTEM_PROMPT_SCRIPTED = "You are a casting director and set designer for short films."
 DEFAULT_PERF_USER_TEMPLATE_SCRIPTED = (
