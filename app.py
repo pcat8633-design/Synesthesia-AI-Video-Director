@@ -266,9 +266,9 @@ def save_global_url_settings(ltx_url, lm_url):
         data["lm_studio_url"] = LM_STUDIO_URL
         with open(GLOBAL_SETTINGS_FILE, "w") as f:
             json.dump(data, f, indent=4)
-        return "✅ Settings saved and applied."
+        return "✅ Settings saved and applied.", gr.update(choices=LLMBridge().get_models())
     except Exception as e:
-        return f"❌ Error saving settings: {e}"
+        return f"❌ Error saving settings: {e}", gr.update()
 
 load_global_url_settings()
 
@@ -366,7 +366,7 @@ class LLMBridge:
             "temperature": temperature
         }
         try:
-            resp = requests.post(url, json=payload, timeout=120)
+            resp = requests.post(url, json=payload, timeout=600)
             if resp.status_code != 200:
                 return f"Error {resp.status_code} from LLM: {resp.text}"
             return resp.json()['choices'][0]['message']['content'].strip()
@@ -899,7 +899,25 @@ def generate_concepts_logic(overarching_plot, llm_model, rough_concept, performa
             shot_list=shot_list_csv
         )
 
-    response = llm.query(sys_prompt, user_prompt, llm_model)
+    result_box = [None]
+    def _run_query(): result_box[0] = llm.query(sys_prompt, user_prompt, llm_model)
+    t = threading.Thread(target=_run_query, daemon=True)
+    t.start()
+    elapsed, warned = 0, False
+    while t.is_alive():
+        if pm.stop_generation:
+            yield df, "🛑 Stopped."
+            return
+        time.sleep(1)
+        elapsed += 1
+        if elapsed >= 120 and not warned:
+            yield df, "⚠️ LLM is taking longer than 2 minutes. Click *Stop Generation* to cancel, or continue waiting..."
+            warned = True
+    t.join()
+    response = result_box[0]
+    if response is None:
+        yield df, "❌ LLM query failed or returned no result."
+        return
 
     if pm.stop_generation:
         yield df, "🛑 Stopped."
@@ -1383,6 +1401,90 @@ def assemble_video(full_song_path, resolution, pm, fallback_mode=False):
 
     return out_path
 
+def assemble_cutting_room_floor(full_song_path, resolution, pm):
+    """Assemble all versions (cutting_room + active videos) into a single chronological showreel."""
+    vid_dir = pm.get_path("videos")
+    cut_dir = pm.get_path("cutting_room")
+
+    all_files = []
+    for d in [vid_dir, cut_dir]:
+        if os.path.exists(d):
+            all_files.extend(glob.glob(os.path.join(d, "*.mp4")))
+
+    if not all_files:
+        return "No videos found in videos or cutting_room directories."
+
+    def sort_key(filepath):
+        shot_id = os.path.basename(filepath).split("_")[0].upper()
+        return (shot_id, os.path.getmtime(filepath))  # shot order, then oldest-first
+
+    all_files.sort(key=sort_key)
+
+    target_size = None
+    for f in all_files:
+        try:
+            probe = VideoFileClip(f)
+            target_size = tuple(probe.size)
+            probe.close()
+            break
+        except:
+            pass
+    if target_size is None:
+        target_size = RESOLUTION_MAP.get(resolution, (1920, 1080))
+
+    clips = []
+    clips_to_close = []
+    for f in all_files:
+        try:
+            clip = VideoFileClip(f).without_audio().set_fps(24)
+            if tuple(clip.size) != target_size:
+                clip = clip.resize(newsize=target_size)
+            clips.append(clip)
+            clips_to_close.append(clip)
+        except Exception as e:
+            print(f"Skipping {f}: {e}")
+
+    if not clips:
+        return "No valid clips could be loaded."
+
+    final = concatenate_videoclips(clips, method="chain")
+
+    audio_path = full_song_path if (full_song_path and os.path.exists(full_song_path)) else pm.get_asset_path_if_exists("full_song.mp3")
+    if not audio_path:
+        audio_path = pm.get_asset_path_if_exists("vocals.mp3")
+
+    audio = None
+    if audio_path and os.path.exists(audio_path):
+        try:
+            audio = AudioFileClip(audio_path)
+            if audio.duration > final.duration:
+                audio = audio.subclip(0, final.duration)
+            final = final.set_audio(audio)
+        except Exception as e:
+            print(f"Audio attach failed: {e}")
+
+    total_seconds = pm.get_current_total_time()
+    time_str = format_time(total_seconds)
+    out_path = os.path.join(pm.get_path("renders"), f"cutting_room_floor_{time_str}.mp4")
+
+    try:
+        final.write_videofile(
+            out_path, fps=24, codec='libx264', audio_codec='aac',
+            temp_audiofile=os.path.join(pm.get_path("renders"), "temp_audio_crf.m4a"),
+            remove_temp=True,
+            ffmpeg_params=["-pix_fmt", "yuv420p", "-ar", "44100"]
+        )
+    finally:
+        final.close()
+        if audio is not None:
+            try: audio.close()
+            except: pass
+        for c in clips_to_close:
+            try: c.close()
+            except: pass
+
+    return out_path
+
 # ==========================================
 # GRADIO UI
 # ==========================================
@@ -1407,7 +1509,8 @@ css = """
 """
 
 with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(), css=css) as app:
-    pm_state = gr.State(ProjectManager()) 
+    pm_state = gr.State(ProjectManager())
+    shared_shot_state = gr.State(None)  # syncs selected shot between Tab 3 and Tab 4
     
     with gr.Row():
         gr.HTML(header_html)
@@ -1578,6 +1681,7 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
             return ""
 
         single_shot_dropdown.change(load_single_shot_prompt, inputs=[single_shot_dropdown, pm_state], outputs=[single_shot_prompt_edit])
+        single_shot_dropdown.change(lambda s: s, inputs=[single_shot_dropdown], outputs=[shared_shot_state])
 
         def save_single_shot_prompt(shot_id, new_prompt, pm):
             if not shot_id or pm.df.empty: return
@@ -1613,9 +1717,11 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
             lambda: (gr.update(visible=True), gr.update(visible=False)), outputs=[vid_gen_start_btn, vid_gen_stop_btn]
         )
         
-        def update_single_shot_choices(pm):
-            if pm.df.empty: return gr.update(choices=[])
-            return gr.update(choices=pm.df['Shot_ID'].dropna().unique().tolist())
+        def update_single_shot_choices(pm, shared_shot):
+            if pm.df.empty: return gr.update(choices=[]), shared_shot
+            choices = pm.df['Shot_ID'].dropna().unique().tolist()
+            value = shared_shot if shared_shot in choices else None
+            return gr.update(choices=choices, value=value), shared_shot
 
         def handle_single_shot(shot_id, res, vocal_mode, proj, pm):
             if pm.is_generating:
@@ -1761,7 +1867,8 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
         gr.Markdown("### ✂️ Cutting Room & Version Comparison")
         with gr.Row():
             compare_shot_dropdown = gr.Dropdown(label="Select Shot to Compare Versions")
-            next_shot_btn = gr.Button("➡️ Next Shot") 
+            prev_shot_btn = gr.Button("⬅️ Previous Shot")
+            next_shot_btn = gr.Button("➡️ Next Shot")
         
         compare_cols = []
         compare_vids = []
@@ -1790,6 +1897,11 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
             assemble_current_btn = gr.Button("Assemble with Current Assets (Videos > Black Fallback)", variant="primary")
         final_video_out = gr.Video(label="Final Cut")
         assembly_status = gr.Textbox(label="Assembly Status", interactive=False)
+
+        gr.Markdown("---")
+        gr.Markdown("### 🗂️ Cutting Room Floor Compilation")
+        gr.Markdown("Assembles every version of every shot (active + discarded) into a single video, grouped by shot in order, oldest version first.")
+        assemble_crf_btn = gr.Button("🗂️ Assemble Cutting Room Floor", variant="secondary")
 
         gr.Markdown("---")
         gr.Markdown("### Previous Renders")
@@ -1823,7 +1935,7 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
         renders_gallery.select(on_render_gallery_select, inputs=[renders_state], outputs=[render_playback, render_select_dropdown])
 
         # --- Tab 4 Logic Wiring ---
-        def manual_sync_and_get_choices(pm, progress=gr.Progress()):
+        def manual_sync_and_get_choices(pm, shared_shot, progress=gr.Progress()):
             progress(0, desc="Syncing Video Directory...")
             sync_video_directory(pm)
             progress(0.8, desc="Updating Shot List...")
@@ -1835,9 +1947,10 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
             gallery_data, render_paths = get_project_renders(pm)
             render_choices = [os.path.basename(p) for p in render_paths]
             progress(1.0, desc="Complete!")
-            return gr.update(choices=choices), pm.df, gallery_data, render_paths, gr.update(choices=render_choices, value=None)
+            value = shared_shot if shared_shot in choices else None
+            return gr.update(choices=choices, value=value), pm.df, gallery_data, render_paths, gr.update(choices=render_choices, value=None)
 
-        tab4_ui.select(manual_sync_and_get_choices, inputs=[pm_state], outputs=[compare_shot_dropdown, shot_table, renders_gallery, renders_state, render_select_dropdown])
+        tab4_ui.select(manual_sync_and_get_choices, inputs=[pm_state, shared_shot_state], outputs=[compare_shot_dropdown, shot_table, renders_gallery, renders_state, render_select_dropdown])
         
         # Next shot cycling logic
         def get_next_shot(current_shot, pm):
@@ -1860,6 +1973,24 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
             next_idx = (idx + 1) % len(choices)
             return gr.update(value=choices[next_idx])
 
+        def get_prev_shot(current_shot, pm):
+            if pm.df.empty: return gr.update()
+            choices = pm.df[pm.df["All_Video_Paths"] != ""]["Shot_ID"].dropna().unique().tolist()
+            if not choices: return gr.update(value=None)
+            if current_shot not in choices:
+                all_shots = pm.df["Shot_ID"].dropna().unique().tolist()
+                if current_shot in all_shots:
+                    curr_idx = all_shots.index(current_shot)
+                    for i in range(1, len(all_shots) + 1):
+                        check_idx = (curr_idx - i) % len(all_shots)
+                        if all_shots[check_idx] in choices:
+                            return gr.update(value=all_shots[check_idx])
+                return gr.update(value=choices[-1])
+            idx = choices.index(current_shot)
+            prev_idx = (idx - 1) % len(choices)
+            return gr.update(value=choices[prev_idx])
+
+        prev_shot_btn.click(get_prev_shot, inputs=[compare_shot_dropdown, pm_state], outputs=[compare_shot_dropdown])
         next_shot_btn.click(get_next_shot, inputs=[compare_shot_dropdown, pm_state], outputs=[compare_shot_dropdown])
         
         def update_comparison_view(shot_id, pm):
@@ -1897,6 +2028,7 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
             return col_updates + vid_updates + path_updates
             
         compare_shot_dropdown.change(update_comparison_view, inputs=[compare_shot_dropdown, pm_state], outputs=compare_cols + compare_vids + compare_paths)
+        compare_shot_dropdown.change(lambda s: s, inputs=[compare_shot_dropdown], outputs=[shared_shot_state])
         
         def set_active_video(path, shot_id, pm):
             if not path or not os.path.exists(path): return update_comparison_view(shot_id, pm)
@@ -1941,16 +2073,27 @@ with gr.Blocks(title="Synesthesia AI Video Director", theme=gr.themes.Default(),
         assemble_btn.click(lambda s, res, pm: assemble_and_refresh(s, res, pm, False), inputs=[song_up, vid_resolution_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
         assemble_current_btn.click(lambda s, res, pm: assemble_and_refresh(s, res, pm, True), inputs=[song_up, vid_resolution_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
 
+        def assemble_crf_and_refresh(song_file, resolution, pm):
+            result = assemble_cutting_room_floor(get_file_path(song_file), resolution, pm)
+            gallery_data, render_paths = get_project_renders(pm)
+            render_choices = [os.path.basename(p) for p in render_paths]
+            if result and os.path.exists(str(result)):
+                return result, "", gallery_data, render_paths, gr.update(choices=render_choices, value=os.path.basename(result))
+            else:
+                return None, str(result), gallery_data, render_paths, gr.update(choices=render_choices, value=None)
+
+        assemble_crf_btn.click(assemble_crf_and_refresh, inputs=[song_up, vid_resolution_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
+
 # --- TAB 5: SETTINGS ---
     with gr.Tab("5. Settings"):
         gr.Markdown("### ⚙️ Global Settings")
         gr.Markdown("These settings apply globally across all projects and are saved immediately on click.")
         with gr.Row():
             ltx_url_in = gr.Textbox(label="LTX Desktop API URL", value=LTX_BASE_URL, placeholder="http://127.0.0.1:8000/api")
-            lm_url_in = gr.Textbox(label="LM Studio API URL", value=LM_STUDIO_URL, placeholder="http://127.0.0.1:1234/v1")
+            lm_url_in = gr.Textbox(label="LLM API URL (LM Studio / llama.cpp)", value=LM_STUDIO_URL, placeholder="http://127.0.0.1:1234/v1")
         save_settings_btn = gr.Button("💾 Save Settings", variant="primary")
         settings_status = gr.Textbox(label="Status", interactive=False)
-        save_settings_btn.click(save_global_url_settings, inputs=[ltx_url_in, lm_url_in], outputs=[settings_status])
+        save_settings_btn.click(save_global_url_settings, inputs=[ltx_url_in, lm_url_in], outputs=[settings_status, llm_dropdown])
 
 # --- TAB 6: HELP ---
     with gr.Tab("6. Help"):
@@ -2001,7 +2144,7 @@ All shot durations are automatically locked to LTX-compatible frame counts (1–
 
 ### Step 2 — Generate Prompts
 
-1. Select your **LLM model** from the dropdown. Click 🔄 to refresh the list from LM Studio.
+1. Select your **LLM model** from the dropdown. Click 🔄 to refresh the list from your LLM backend (LM Studio or llama-server).
 2. Write a **rough concept** describing the vibe, setting, or mood of the video.
 3. Click *Generate Singer, Band & Venue Desc* to create a concise visual description of your performer(s). This is also used as the video prompt for all Vocal shots.
 4. Click *Generate Overarching Plot* to produce a cohesive linear narrative based on your concept and lyrics.
@@ -2069,9 +2212,9 @@ The assembled video is written to the project's `renders/` folder. The full song
 
 Configure the API endpoints used by the application:
 - **LTX Desktop API URL** — the base URL for the LTX video generation backend (default: `http://127.0.0.1:8000/api`)
-- **LM Studio API URL** — the base URL for the local LLM backend (default: `http://127.0.0.1:1234/v1`)
+- **LLM API URL** — the base URL for the local LLM backend. Supports **LM Studio** (default: `http://127.0.0.1:1234/v1`) and **llama.cpp** `llama-server.exe` (default: `http://127.0.0.1:8080/v1`). When using llama-server, start it with at least **32K context** (`--ctx-size 32768`) for projects with large shot lists.
 
-Click *Save Settings* to apply immediately. Settings are stored globally in `global_settings.json` and persist across all projects and sessions.
+Click *Save Settings* to apply immediately and refresh the model list. Settings are stored globally in `global_settings.json` and persist across all projects and sessions.
 
 ---
 
@@ -2466,7 +2609,7 @@ Lyrics: [insert lyrics here]
 
     # Dynamic UI Refresh Event
     tab2_ui.select(lambda pm: pm.df, inputs=[pm_state], outputs=[shot_table])
-    tab3_ui.select(update_single_shot_choices, inputs=[pm_state], outputs=[single_shot_dropdown])
+    tab3_ui.select(update_single_shot_choices, inputs=[pm_state, shared_shot_state], outputs=[single_shot_dropdown, shared_shot_state])
 
 if __name__ == "__main__":
     try:

@@ -6,7 +6,7 @@ Synesthesia AI Video Director is an AI-powered music video creation tool. It ana
 
 You will need two external applications running alongside this tool:
 
-- **[LM Studio](https://lmstudio.ai/)** — Local LLM inference server. Load a model (qwen3.5-9b recommended) and start the server on the default port (`http://127.0.0.1:1234`). LM Studio provides the language model that writes video prompts and plot summaries.
+- **[LM Studio](https://lmstudio.ai/)** or **[llama.cpp](https://github.com/ggerganov/llama.cpp)** (`llama-server.exe`) — Local LLM inference server. Load a model (qwen3-8b or similar recommended) and start the server on the default port (`http://127.0.0.1:1234`). LM Studio provides the language model that writes video prompts and plot summaries. If using llama-server, start it with at least **32K context** to handle large shot lists: `llama-server.exe -m your-model.gguf --ctx-size 32768`.
 
 - **[LTX Desktop](https://ltx.io/ltx-desktop)** — Local AI video generation engine. Start the LTX Desktop server on the default port (`http://127.0.0.1:8000`). LTX Desktop generates the actual video clips from the prompts.
 
@@ -109,7 +109,7 @@ The **Mode** dropdown on Tab 2 controls how the shot timeline is built:
 
 ### Settings
 
-API endpoints for LTX Desktop and LM Studio can be changed on Tab 5. Settings persist across projects in `global_settings.json`.
+API endpoints for LTX Desktop and the LLM backend can be changed on Tab 5. Supports **LM Studio** (default: `http://127.0.0.1:1234/v1`) and **llama.cpp** `llama-server.exe` (default: `http://127.0.0.1:8080/v1`). Settings persist across projects in `global_settings.json`.
 
 ### Hotkey
 
