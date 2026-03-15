@@ -10,7 +10,33 @@ You will need two external applications running alongside this tool:
 
 - **[LTX Desktop](https://ltx.io/ltx-desktop)** — Local AI video generation engine. Start the LTX Desktop server on the default port (`http://127.0.0.1:8000`). LTX Desktop generates the actual video clips from the prompts.
 
-## Installation
+You will also need the following installed on your system:
+
+- **[Python](https://www.python.org/downloads/)** — Version 3.8 or higher. During installation on Windows, make sure to check **"Add Python to PATH"**.
+- **[FFmpeg](https://ffmpeg.org/)** — Required by `pydub` for audio processing. Must be installed and available on your system PATH.
+- **[Git](https://git-scm.com/)** — Required for cloning the repository and receiving updates. Windows users can install [Git for Windows](https://git-scm.com/download/win).
+
+## Quick Start (Windows)
+
+For Windows users who prefer not to use the command line, batch files are included:
+
+1. **Clone the repository** — Open a terminal and run:
+
+   ```
+   git clone https://github.com/RowanUnderwood/Synesthesia-AI-Video-Director.git
+   ```
+
+   Or download and extract the ZIP from GitHub.
+
+2. **Install** — Double-click **`install.bat`**. This creates a virtual environment and installs all Python dependencies automatically.
+
+3. **Run** — Double-click **`run.bat`** to start the application. The Gradio interface will open in your browser.
+
+4. **Update** — Double-click **`update.bat`** at any time to pull the latest code from GitHub and update dependencies.
+
+> **Note:** Make sure Python, FFmpeg, and Git are installed and on your PATH before running the batch files (see [Prerequisites](#prerequisites)).
+
+## Manual Installation (All Platforms)
 
 1. **Clone the repository**
 
