@@ -6,7 +6,7 @@ Synesthesia AI Video Director is an AI-powered music video creation tool. It ana
 
 You will need two external applications running alongside this tool:
 
-- **[LM Studio](https://lmstudio.ai/)** — Local LLM inference server. Load a model (e.g. Qwen, LLaMA) and start the server on the default port (`http://127.0.0.1:1234`). LM Studio provides the language model that writes video prompts and plot summaries.
+- **[LM Studio](https://lmstudio.ai/)** — Local LLM inference server. Load a model (qwen3.5-9b recommended) and start the server on the default port (`http://127.0.0.1:1234`). LM Studio provides the language model that writes video prompts and plot summaries.
 
 - **[LTX Desktop](https://ltx.io/ltx-desktop)** — Local AI video generation engine. Start the LTX Desktop server on the default port (`http://127.0.0.1:8000`). LTX Desktop generates the actual video clips from the prompts.
 
