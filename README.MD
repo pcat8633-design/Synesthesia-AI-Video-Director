@@ -1,6 +1,6 @@
 # Synesthesia AI Video Director
 
-Synesthesia AI Video Director is an AI-powered music video creation tool. It analyses vocal audio to build a shot timeline, uses a local LLM to generate cinematic video prompts, sends those prompts to LTX Desktop for video generation, and assembles the final video with your song audio.
+Synesthesia AI Video Director is an AI-powered music video creation tool. It analyses vocal audio to build a shot timeline, uses a local LLM to generate cinematic video prompts, sends those prompts to a local AI video engine for generation, and assembles the final video with your song audio.
 
 ## Prerequisites
 
@@ -8,7 +8,9 @@ You will need two external applications running alongside this tool:
 
 - **[LM Studio](https://lmstudio.ai/)** or **[llama.cpp](https://github.com/ggerganov/llama.cpp)** (`llama-server.exe`) — Local LLM inference server. Load a model (qwen3-8b or similar recommended) and start the server on the default port (`http://127.0.0.1:1234`). LM Studio provides the language model that writes video prompts and plot summaries. If using llama-server, start it with at least **32K context** to handle large shot lists: `llama-server.exe -m your-model.gguf --ctx-size 32768`.
 
-- **[LTX Desktop](https://ltx.io/ltx-desktop)** — Local AI video generation engine. Start the LTX Desktop server on the default port (`http://127.0.0.1:8000`). LTX Desktop generates the actual video clips from the prompts.
+- **Video generation backend** — Choose one of the following:
+  - **[LTX Desktop](https://ltx.io/ltx-desktop)** *(recommended)* — Local AI video generation engine. Start the LTX Desktop server on the default port (`http://127.0.0.1:8000`). Requires ~20+ GB VRAM.
+  - **[Wan2GP](https://github.com/deepbeepmeep/Wan2GP)** *(low-VRAM alternative)* — Open-source video generation app. The Wan2.1 1.3B model runs on ~6 GB VRAM. Requires running `wan2gp_server.py` as an HTTP bridge (see [Wan2GP Setup](#wan2gp-alternative-backend) below).
 
 > **LTX Desktop VRAM Bypass:** LTX Desktop may refuse to run if your GPU VRAM is below its default threshold. You can bypass this on a **fresh install** (before launching the app for the first time) by editing `runtime_policy.py` located in `LTX Desktop\resources\backend\runtime_config`. Find the Windows VRAM check and lower the threshold to below your available VRAM:
 > ```python
@@ -75,7 +77,7 @@ For Windows users who prefer not to use the command line, batch files are includ
 4. **Start the external services**
 
    - Open **LM Studio**, load a model, and start the local server.
-   - Open **LTX Desktop** and start the API server.
+   - Open **LTX Desktop** and start the API server (or set up the Wan2GP bridge — see below).
 
 5. **Launch the application**
 
@@ -93,7 +95,7 @@ For Windows users who prefer not to use the command line, batch files are includ
 2. **Upload Assets** (Tab 1) — Upload an isolated vocal track (for timeline scanning), optionally upload the full song (for final assembly), and paste your lyrics.
 3. **Build the Timeline** (Tab 2) — Choose a mode, adjust silence detection settings, and click *Scan Vocals & Build Timeline*. The app splits your audio into Vocal and Action shots.
 4. **Generate Prompts** (Tab 2) — Select your LLM model, write a rough concept, then generate the overarching plot and video prompts with the bulk generation button.
-5. **Generate Videos** (Tab 3) — Pick a generation mode and resolution, then click *Start Batch Generation*. LTX Desktop will render each shot.
+5. **Generate Videos** (Tab 3) — Pick a generation mode and resolution, then click *Start Batch Generation*. Your video backend will render each shot.
 6. **Review & Assemble** (Tab 4) — Compare video versions for each shot, pick the best take, and assemble the final video with audio.
 
 ### Video Modes
@@ -109,11 +111,110 @@ The **Mode** dropdown on Tab 2 controls how the shot timeline is built:
 
 ### Settings
 
-API endpoints for LTX Desktop and the LLM backend can be changed on Tab 5. Supports **LM Studio** (default: `http://127.0.0.1:1234/v1`) and **llama.cpp** `llama-server.exe` (default: `http://127.0.0.1:8080/v1`). Settings persist across projects in `global_settings.json`.
+API endpoints are configured on Tab 5:
+
+- **Video Generation Backend** — select **LTX Desktop** (default) or **Wan2GP**. The URL field pre-fills with the appropriate default when you change backends.
+- **Video Backend API URL** — base URL for the video generation backend (`http://127.0.0.1:8000/api` for LTX Desktop; `http://127.0.0.1:7862/api` for Wan2GP).
+- **LLM API URL** — base URL for the local LLM backend. Supports **LM Studio** (default: `http://127.0.0.1:1234/v1`) and **llama.cpp** `llama-server.exe` (default: `http://127.0.0.1:8080/v1`).
+
+Settings persist across projects in `global_settings.json`.
 
 ### Hotkey
 
 Press `Ctrl+R` in the terminal to restart the application without losing project data.
+
+---
+
+## Wan2GP Alternative Backend
+
+For GPUs with limited VRAM that can't run LTX Desktop, **Wan2GP** is a free open-source alternative. The Wan2.1 1.3B model runs on ~6 GB VRAM.
+
+> **Limitation:** Wan2GP does not support audio-guided generation. Vocal shots will be generated from their text prompt only — no lip-sync. All other features work normally.
+
+### Manual Install
+
+1. Clone Wan2GP: `git clone https://github.com/deepbeepmeep/Wan2GP` and install its dependencies per its README
+2. Install Flask in your Wan2GP virtual environment: `pip install flask`
+3. Copy `wan2gp_server.py` from the Synesthesia folder into your Wan2GP folder
+4. Start the bridge server: `python wan2gp_server.py --model t2v_1.3B`
+5. In Synesthesia → Tab 5 Settings: select **Wan2GP** backend, verify the URL is `http://127.0.0.1:7862/api`, and click **Save Settings**
+
+### Pinokio Install
+
+Pinokio sandboxes Wan2GP in its own Python environment. You must use Pinokio's Python — not the system Python — to run the bridge.
+
+1. Find your **Pinokio home directory**: open Pinokio → Settings (the path is shown at the top). Call this `<pinokio_home>`. The Wan2GP app lives at `<pinokio_home>\api\wan2gp.git\app\`.
+2. Install Flask using **Pinokio's pip** (run once):
+   ```
+   <pinokio_home>\api\wan2gp.git\app\env\Scripts\pip.exe install flask
+   ```
+3. Copy `wan2gp_server.py` from the Synesthesia folder into `<pinokio_home>\api\wan2gp.git\app\`.
+4. **⚠️ Stop Pinokio's Wan2GP UI before continuing** — both the UI and the bridge try to load the model and will conflict if run together. The Wan2GP Gradio UI runs on port 7861; the bridge uses port 7862 to avoid this conflict.
+5. Start the bridge using **Pinokio's Python**:
+   ```
+   <pinokio_home>\api\wan2gp.git\app\env\Scripts\python.exe wan2gp_server.py --model t2v_1.3B
+   ```
+6. In Synesthesia → Tab 5 Settings: select **Wan2GP** backend, set the URL to `http://127.0.0.1:7862/api`, and click **Save Settings**.
+
+### Available Models
+
+| Model | VRAM | Notes |
+|-------|------|-------|
+| `t2v_1.3B` | ~6 GB | Good quality, runs on modest GPUs |
+| `t2v` | ~20 GB | Better quality (14B model) |
+| `ltx2_22B_distilled` | ~24 GB | Best quality (same engine as LTX Desktop) |
+
+---
+
+## Tips & Workflow
+
+1. **Vocals file is the backbone** — use a clean isolated vocal track for accurate silence detection. Stems from a vocal remover work well.
+2. **Iterate on prompts** — use Export/Import CSV to batch-edit prompts in a spreadsheet before spending time on video generation.
+3. **Generate multiple versions** — set Versions Per Shot to 2–3 and use the Cutting Room to pick the best take for each shot.
+4. **Use Regenerate AND Prompt** on shots you're unhappy with — sometimes a fresh LLM pass produces a much better visual concept.
+5. **Strict vs. Fallback assembly** — use Fallback mode to preview your edit before all shots are done, then switch to Strict for the final render.
+6. **Hotkey** — press `Ctrl+R` in the terminal window to restart the application quickly without losing your project data.
+
+---
+
+## Cloud LLM Prompt Template
+
+If you prefer not to run a local LLM, you can use a cloud-based model (such as Claude, ChatGPT, etc.) to generate your video prompts. Here's how:
+
+1. **Export** your shot list from Tab 2 using the **Export CSV** button.
+2. **Open** your preferred cloud LLM in a browser.
+3. **Attach** the exported shot list file to your message.
+4. **Paste** the template below into the message, filling in the bracketed placeholders with your own details.
+5. **Send** the message and wait for the LLM to return the completed shot list.
+6. **Import** the completed file back into Synesthesia using the **Import CSV** button on Tab 2.
+
+### Template (copy and paste this into your cloud LLM)
+
+```
+Create a music video via AI video prompts for the following song. See the attached shot list with durations and frame counts. We need to tell a coherent story using the shots labeled "action" in the type column. Return the shot list file with each "Video_Prompt" field filled out.
+
+The AI video prompt for the vocal shots should always be very similar to the following as we cut to the live performance. We need to focus on consistency and always being closeup so the lip-sync model has enough pixels to work with.
+
+"Handheld dynamic closeup shot of a [describe lead singer here] Dynamic camera movement with slight handheld shake, shallow depth of field, dramatic chiaroscuro lighting, 85mm lens, 24fps, high contrast, crowd silhouettes, energetic atmosphere, cinematic color grading, [describe color palette here] [name of singer] is careful to enunciate each word to the camera to account for their deaf sister's lip reading."
+
+Follow the LTX prompt guide to create each "action" AI video model prompt:
+
+- Establish the shot. Use cinematography terms that match your preferred film genre. Include aspects like scale or specific category characteristics to further refine the style you're looking for.
+- Set the scene. Describe lighting conditions, color palette, surface textures, and atmosphere to shape the mood.
+- Describe the action. Write the core action as a natural sequence, flowing from beginning to end.
+- Define your character(s). Include age, hairstyle, clothing, and distinguishing details. Express emotions through physical cues.
+- Identify camera movement(s). Specify when the view should shift and how. Including how subjects or objects appear after the camera motion gives the model a better idea of how to finish the motion.
+- Keep your prompt in a single flowing paragraph to give the model a cohesive scene to work with.
+- Use present tense verbs to describe movement and action.
+- Match your detail to the shot scale. Closeups need more precise detail than wide shots.
+- When describing camera movement, focus on the camera's relationship to the subject.
+- You should expect to write 4 to 8 descriptive sentences to cover all the key aspects of the prompt.
+
+Lead Singer's gender: [insert gender description here]
+Story Idea: [insert story idea here]
+Genre: [insert genre tags here]
+Lyrics: [insert lyrics here]
+```
 
 ## License
 
