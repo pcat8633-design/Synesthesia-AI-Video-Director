@@ -25,6 +25,10 @@ def build(pm_state, current_proj_var):
                 with gr.Row():
                     load_btn = gr.Button("Load Selected Project")
                     delete_proj_btn = gr.Button("Delete Selected Project", variant="stop")
+                with gr.Row(visible=False) as confirm_delete_row:
+                    gr.Markdown("⚠️ **Are you sure?** This permanently deletes the project and all its files.")
+                    confirm_delete_btn = gr.Button("Yes, Delete It", variant="stop")
+                    cancel_delete_btn = gr.Button("Cancel")
 
         with gr.Row():
             proj_status = gr.Textbox(label="System Status", interactive=False)
@@ -54,7 +58,24 @@ def build(pm_state, current_proj_var):
                 return f"Error deleting project: {e}", gr.update()
         return "Project not found.", gr.update()
 
-    delete_proj_btn.click(handle_delete_project, inputs=[project_dropdown, pm_state], outputs=[proj_status, project_dropdown])
+    delete_proj_btn.click(
+        lambda: (gr.update(visible=True), gr.update(visible=False)),
+        outputs=[confirm_delete_row, delete_proj_btn]
+    )
+
+    confirm_delete_btn.click(
+        handle_delete_project,
+        inputs=[project_dropdown, pm_state],
+        outputs=[proj_status, project_dropdown]
+    ).then(
+        lambda: (gr.update(visible=False), gr.update(visible=True)),
+        outputs=[confirm_delete_row, delete_proj_btn]
+    )
+
+    cancel_delete_btn.click(
+        lambda: (gr.update(visible=False), gr.update(visible=True)),
+        outputs=[confirm_delete_row, delete_proj_btn]
+    )
 
     def auto_save_lyrics(proj_name_val, text, pm):
         if proj_name_val:

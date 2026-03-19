@@ -1,0 +1,16 @@
+Style dropdown for vocal vs action.  Custom Styles.  Directed by dropdown.  
+
+
+Create a plan to add the following:
+
+Character bibles.  Right now we are asking The local LLM in the templates to describe any recurring characters again in each prompt.  This would be fine I think if they could remember to do this :D  
+
+Instead, lets try this.  Alter the prompt templates to have the LLM give all the recurring characters a first name and refer to them by their first name always.  Don't ask for a character description at all any more.  
+
+Then, after the entire shot list has been generated we will do another LLM request.  This time feed in the full story so far; for intercut mode, we need just the action shots, for the other 2 modes we will need the full story.  Ask qwen to return character descriptions for every named character in the story in the csv format with two columns, character name, description. Include, gender, age, hair color, eye color, jewelry, makeup, clothing, etc.  This description becomes our "character bible."  Then, when we pass the video prompt into LTX we replace the proper names that Qwen originally used with the character bible instead.  We will need a safeguard to prevent the character bibles from being used more than once per each LTX prompt too I think.
+
+These character bibles should also appear in the gui after being generated and be editable by the user.  There might be a few of them so better make it a collapsible list in the "Plot concept and generation" area.                        
+
+
+
+

@@ -7,7 +7,7 @@ import pandas as pd
 import config
 from models import sync_video_directory
 from video import get_project_renders, get_project_videos
-from assembly import assemble_video, assemble_cutting_room_floor
+from assembly import assemble_video, assemble_video_with_shot_numbers, assemble_cutting_room_floor
 from utils import get_file_path
 
 
@@ -19,8 +19,13 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
         with gr.Row():
             compare_shot_dropdown = gr.Dropdown(label="Select Shot to Compare Versions")
             vid_style_filter_dropdown = gr.Dropdown(choices=["All Styles"], value="All Styles", label="Style Filter")
-            prev_shot_btn = gr.Button("⬅️ Previous Shot")
-            next_shot_btn = gr.Button("➡️ Next Shot")
+            with gr.Column():
+                with gr.Row():
+                    prev_shot_btn = gr.Button("⬅️ Previous Shot")
+                    next_shot_btn = gr.Button("➡️ Next Shot")
+                with gr.Row():
+                    prev_multi_btn = gr.Button("⏮ Prev Multi-Version")
+                    next_multi_btn = gr.Button("⏭ Next Multi-Version")
 
         compare_cols = []
         compare_vids = []
@@ -45,8 +50,8 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
         gr.Markdown("---")
         gr.Markdown("### 🎞️ Final Assembly")
         with gr.Row():
-            assemble_btn = gr.Button("Assemble Final Video (Strictly Videos)", variant="secondary")
-            assemble_current_btn = gr.Button("Assemble with Current Assets (Videos > Black Fallback)", variant="primary")
+            assemble_btn = gr.Button("🔢 Assemble with Shot Numbers", variant="secondary")
+            assemble_current_btn = gr.Button("Assemble videos with black fallback", variant="primary")
         final_video_out = gr.Video(label="Final Cut")
         assembly_status = gr.Textbox(label="Assembly Status", interactive=False)
 
@@ -167,6 +172,36 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
     prev_shot_btn.click(get_prev_shot, inputs=[compare_shot_dropdown, pm_state], outputs=[compare_shot_dropdown])
     next_shot_btn.click(get_next_shot, inputs=[compare_shot_dropdown, pm_state], outputs=[compare_shot_dropdown])
 
+    def get_multi_version_shots(pm):
+        result = []
+        for _, row in pm.df.iterrows():
+            paths_str = str(row.get("All_Video_Paths", ""))
+            paths = [p for p in paths_str.split(",") if p.strip()]
+            if len(paths) > 1:
+                result.append(row["Shot_ID"])
+        return result
+
+    def get_next_multi_shot(current_shot, pm):
+        if pm.df.empty: return gr.update()
+        shots = get_multi_version_shots(pm)
+        if not shots: return gr.update(value=None)
+        if current_shot not in shots:
+            return gr.update(value=shots[0])
+        idx = shots.index(current_shot)
+        return gr.update(value=shots[(idx + 1) % len(shots)])
+
+    def get_prev_multi_shot(current_shot, pm):
+        if pm.df.empty: return gr.update()
+        shots = get_multi_version_shots(pm)
+        if not shots: return gr.update(value=None)
+        if current_shot not in shots:
+            return gr.update(value=shots[-1])
+        idx = shots.index(current_shot)
+        return gr.update(value=shots[(idx - 1) % len(shots)])
+
+    prev_multi_btn.click(get_prev_multi_shot, inputs=[compare_shot_dropdown, pm_state], outputs=[compare_shot_dropdown])
+    next_multi_btn.click(get_next_multi_shot, inputs=[compare_shot_dropdown, pm_state], outputs=[compare_shot_dropdown])
+
     compare_shot_dropdown.change(update_comparison_view, inputs=[compare_shot_dropdown, vid_style_filter_dropdown, pm_state], outputs=compare_cols + compare_vids + compare_paths)
     compare_shot_dropdown.change(lambda s: s, inputs=[compare_shot_dropdown], outputs=[shared_shot_state])
     vid_style_filter_dropdown.change(update_comparison_view, inputs=[compare_shot_dropdown, vid_style_filter_dropdown, pm_state], outputs=compare_cols + compare_vids + compare_paths)
@@ -253,7 +288,16 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
         else:
             return None, str(result), gallery_data, render_paths, gr.update(choices=render_choices, value=None)
 
-    assemble_btn.click(lambda s, res, sf, pm: assemble_and_refresh(s, res, sf, pm, False), inputs=[song_up, vid_resolution_dropdown, vid_style_filter_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
+    def assemble_numbered_and_refresh(song_file, resolution, style_filter, pm):
+        result = assemble_video_with_shot_numbers(get_file_path(song_file), resolution, pm, style_filter=style_filter)
+        gallery_data, render_paths = get_project_renders(pm)
+        render_choices = [os.path.basename(p) for p in render_paths]
+        if result and os.path.exists(str(result)):
+            return result, "", gallery_data, render_paths, gr.update(choices=render_choices, value=None)
+        else:
+            return None, str(result), gallery_data, render_paths, gr.update(choices=render_choices, value=None)
+
+    assemble_btn.click(assemble_numbered_and_refresh, inputs=[song_up, vid_resolution_dropdown, vid_style_filter_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
     assemble_current_btn.click(lambda s, res, sf, pm: assemble_and_refresh(s, res, sf, pm, True), inputs=[song_up, vid_resolution_dropdown, vid_style_filter_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
 
     def assemble_crf_and_refresh(song_file, resolution, pm):

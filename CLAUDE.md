@@ -2,7 +2,17 @@
 
 ## Architecture
 
-Single-file Gradio application (`app.py`) that orchestrates:
+Modular Gradio application split across `app.py` (entry point) and supporting modules:
+- **`models.py`** — `ProjectManager` (project I/O, CSV, assets) and `LLMBridge` (LM Studio API)
+- **`config.py`** — API endpoints, resolution map, LLM prompt templates, style loading
+- **`timeline.py`** — Audio silence analysis, shot generation, LTX frame locking
+- **`llm_logic.py`** — Prompt/plot generation orchestration, LLM response parsing
+- **`video.py`** — LTX video generation per shot, gallery display, frame count cache
+- **`assembly.py`** — moviepy video assembly, cutting room floor compilation
+- **`utils.py`** — Frame snapping, base64 image encoding, restart hotkey
+- **`ui/`** — Gradio UI split into 6 tabs (project, storyboard, video, assembly, settings, help)
+
+Orchestrates:
 - **LM Studio** (local LLM) — generates video prompts and plot summaries via OpenAI-compatible API
 - **LTX Desktop** (local AI video engine) — generates video clips from prompts
 - **moviepy 1.x** — assembles clips into final video with audio
@@ -18,6 +28,7 @@ Because LTX output resolutions are unpredictable, `RESOLUTION_MAP` uses standard
 - **moviepy must be < 2.0** — the codebase uses `from moviepy.editor import ...` which was removed in moviepy 2.x. Version is pinned in `requirements.txt`.
 - **pydub** requires FFmpeg installed on the system PATH.
 - **keyboard** is used for the Ctrl+R restart hotkey.
+- **`styles.json`** — optional file in the project root that defines named prompt style presets; loaded at startup by `config.py`.
 
 ## Key Domain Concepts
 

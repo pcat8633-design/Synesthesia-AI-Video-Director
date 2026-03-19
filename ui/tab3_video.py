@@ -34,11 +34,14 @@ def build(pm_state, current_proj_var, shared_shot_state):
             single_shot_dropdown = gr.Dropdown(label="Select Shot to Generate", choices=[], interactive=True)
             single_shot_btn = gr.Button("Generate Additional Version", variant="primary")
         single_shot_prompt_edit = gr.Textbox(label="Edit Video Prompt for Selected Shot", lines=3, interactive=True)
-        single_shot_status = gr.Textbox(label="Single Shot Status", interactive=False)
+        with gr.Row():
+            queue_pause_btn = gr.Button("⏸ Pause Queue")
+            queue_cancel_btn = gr.Button("✖ Cancel All", variant="stop")
+        single_shot_status = gr.Textbox(label="Video Render Status", interactive=False, lines=5)
 
         with gr.Row():
             with gr.Column(scale=1):
-                vid_gallery = gr.Gallery(label="Generated Video Thumbnails", columns=4, elem_classes=["scrollable-gallery"], allow_preview=False, interactive=True)
+                vid_gallery = gr.Gallery(label="Generated Video Thumbnails", columns=4, height=600, allow_preview=False, interactive=True)
 
             with gr.Column(scale=1):
                 vid_large_view = gr.Video(label="Selected Video", interactive=False)
@@ -57,7 +60,8 @@ def build(pm_state, current_proj_var, shared_shot_state):
         if not shot_id or pm.df.empty: return ""
         row_idx = pm.df.index[pm.df['Shot_ID'].astype(str).str.upper() == str(shot_id).upper()].tolist()
         if row_idx:
-            return str(pm.df.loc[row_idx[0], 'Video_Prompt'])
+            val = pm.df.loc[row_idx[0], 'Video_Prompt']
+            return "" if pd.isna(val) else str(val)
         return ""
 
     single_shot_dropdown.change(load_single_shot_prompt, inputs=[single_shot_dropdown, pm_state], outputs=[single_shot_prompt_edit])
@@ -102,44 +106,122 @@ def build(pm_state, current_proj_var, shared_shot_state):
         value = shared_shot if shared_shot in choices else None
         return gr.update(choices=choices, value=value), shared_shot
 
-    def handle_single_shot(shot_id, res, vocal_mode, style, proj, pm):
-        if pm.is_generating:
-            gal = get_project_videos(pm, proj)
-            yield gal, "❌ Error: A generation process is already actively running.", [item[0] for item in gal]
-            return
+    def format_queue_status(pm, current_item=None, current_msg=""):
+        lines = []
+        if current_item:
+            shot_label = f"{current_item['shot_id']} — {current_item['resolution']} — {current_item['style']}"
+            lines.append(f"🎬 NOW RENDERING: {shot_label}")
+            if current_msg:
+                lines.append(f"  ⏳ {current_msg}")
+        if pm.render_queue:
+            lines.append(f"📋 QUEUE ({len(pm.render_queue)}):")
+            for i, item in enumerate(pm.render_queue, 1):
+                lines.append(f"  {i}. {item['shot_id']} — {item['resolution']} — {item['style']}")
+        if not lines:
+            return "💤 Queue is empty."
+        return "\n".join(lines)
+
+    def add_to_render_queue(shot_id, resolution, vocal_mode, style, pm):
         if not shot_id:
-            gal = get_project_videos(pm, proj)
-            yield gal, "❌ Error: No shot selected.", [item[0] for item in gal]
-            return
+            return "❌ No shot selected."
+        item = {'shot_id': shot_id, 'resolution': resolution, 'vocal_mode': vocal_mode, 'style': style}
+        with pm.queue_lock:
+            pm.render_queue.append(item)
+        return format_queue_status(pm)
 
-        pm.is_generating = True
+    def process_render_queue_if_idle(pm, proj):
+        with pm.queue_lock:
+            if pm.queue_processor_running or not pm.render_queue:
+                gal = get_project_videos(pm, proj)
+                yield gal, format_queue_status(pm), [item[0] for item in gal]
+                return
+            pm.queue_processor_running = True
+            pm.stop_video_generation = False
+
         try:
-            vid_gen = generate_video_for_shot(shot_id, res, vocal_mode, pm, style)
-            final_path = None
-            for path, msg in vid_gen:
-                if path is None:
+            while True:
+                if pm.queue_paused:
+                    with pm.queue_lock:
+                        queue_snapshot = list(pm.render_queue)
                     gal = get_project_videos(pm, proj)
-                    yield gal, f"⏳ {shot_id}: {msg}", [item[0] for item in gal]
-                else:
-                    final_path = path
+                    paused_lines = ["⏸ [PAUSED]"]
+                    if queue_snapshot:
+                        paused_lines.append(f"📋 QUEUE ({len(queue_snapshot)}):")
+                        for i, it in enumerate(queue_snapshot, 1):
+                            paused_lines.append(f"  {i}. {it['shot_id']} — {it['resolution']} — {it['style']}")
+                    yield gal, "\n".join(paused_lines), [item[0] for item in gal]
+                    time.sleep(0.5)
+                    continue
 
-            if final_path:
+                with pm.queue_lock:
+                    if not pm.render_queue or pm.stop_video_generation:
+                        break
+                    current_item = pm.render_queue.pop(0)
+
+                for path, msg in generate_video_for_shot(
+                    current_item['shot_id'], current_item['resolution'],
+                    current_item['vocal_mode'], pm, current_item['style']
+                ):
+                    if path is None:
+                        gal = get_project_videos(pm, proj)
+                        yield gal, format_queue_status(pm, current_item, msg), [item[0] for item in gal]
+
                 sync_video_directory(pm)
                 gal = get_project_videos(pm, proj)
-                yield gal, f"✅ Finished generating new version of {shot_id}", [item[0] for item in gal]
-            else:
-                gal = get_project_videos(pm, proj)
-                yield gal, f"❌ Failed to generate {shot_id}", [item[0] for item in gal]
+                yield gal, format_queue_status(pm), [item[0] for item in gal]
         finally:
-            pm.is_generating = False
+            with pm.queue_lock:
+                pm.queue_processor_running = False
+                pm.stop_video_generation = False
+            gal = get_project_videos(pm, proj)
+            yield gal, "💤 Queue is empty.", [item[0] for item in gal]
 
-    single_shot_btn.click(handle_single_shot, inputs=[single_shot_dropdown, vid_resolution_dropdown, vid_vocal_prompt_mode, vid_style_dropdown, current_proj_var, pm_state], outputs=[vid_gallery, single_shot_status, gallery_paths_state])
+    single_shot_btn.click(
+        add_to_render_queue,
+        inputs=[single_shot_dropdown, vid_resolution_dropdown, vid_vocal_prompt_mode, vid_style_dropdown, pm_state],
+        outputs=[single_shot_status]
+    ).then(
+        process_render_queue_if_idle,
+        inputs=[pm_state, current_proj_var],
+        outputs=[vid_gallery, single_shot_status, gallery_paths_state],
+        show_progress="hidden"
+    )
 
-    def handle_vid_delete(path_to_del, proj, pm):
+    def toggle_queue_pause(pm):
+        pm.queue_paused = not pm.queue_paused
+        return "▶ Resume Queue" if pm.queue_paused else "⏸ Pause Queue"
+
+    queue_pause_btn.click(toggle_queue_pause, inputs=[pm_state], outputs=[queue_pause_btn])
+
+    def cancel_render_queue(pm):
+        with pm.queue_lock:
+            pm.render_queue.clear()
+            pm.stop_video_generation = True
+            pm.queue_paused = False
+        return "🚫 Cancelling... current render will finish, then queue stops.", "⏸ Pause Queue"
+
+    queue_cancel_btn.click(cancel_render_queue, inputs=[pm_state], outputs=[single_shot_status, queue_pause_btn])
+
+    def handle_vid_delete(path_to_del, proj, pm, gallery_paths):
+        try:
+            current_idx = gallery_paths.index(path_to_del)
+        except ValueError:
+            current_idx = -1
+
         new_gal, _ = delete_video_file(path_to_del, proj, pm)
-        return new_gal, None, "", "", [item[0] for item in new_gal]
+        new_paths = [item[0] for item in new_gal]
 
-    del_vid_btn.click(handle_vid_delete, inputs=[selected_vid_path, current_proj_var, pm_state], outputs=[vid_gallery, vid_large_view, sel_shot_info_vid, selected_vid_path, gallery_paths_state])
+        next_path = ""
+        next_shot_id = ""
+        if new_paths and current_idx >= 0:
+            next_idx = min(current_idx, len(new_paths) - 1)
+            next_path = new_paths[next_idx]
+            fname = os.path.basename(next_path)
+            next_shot_id = fname.split('_')[0] if '_' in fname else ""
+
+        return new_gal, next_path or None, next_shot_id, next_path, new_paths
+
+    del_vid_btn.click(handle_vid_delete, inputs=[selected_vid_path, current_proj_var, pm_state, gallery_paths_state], outputs=[vid_gallery, vid_large_view, sel_shot_info_vid, selected_vid_path, gallery_paths_state])
 
     def handle_regen_vid(shot_id_txt, selected_path, resolution, vocal_mode, style, proj, pm):
         if pm.is_generating:

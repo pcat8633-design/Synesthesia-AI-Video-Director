@@ -4,6 +4,7 @@ import re
 import time
 import glob
 import shutil
+import threading
 
 import requests
 import pandas as pd
@@ -61,9 +62,27 @@ class ProjectManager:
         self.stop_video_generation = False
         self.is_generating = False
 
+        # Render Queue
+        self.render_queue = []
+        self.queue_lock = threading.Lock()
+        self.queue_paused = False
+        self.queue_processor_running = False
+
         # Time Tracking Variables
         self.total_time_spent = 0
         self.session_start_time = None
+
+    def __deepcopy__(self, memo):
+        import copy
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            if isinstance(v, type(threading.Lock())):
+                setattr(result, k, threading.Lock())
+            else:
+                setattr(result, k, copy.deepcopy(v, memo))
+        return result
 
     def sanitize_name(self, name):
         return re.sub(r'[\\/*?:"<>|]', "", name).strip().strip(".").replace(" ", "_")

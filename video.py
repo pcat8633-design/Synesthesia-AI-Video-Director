@@ -126,7 +126,8 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None):
         return
 
     row = pm.df.loc[row_idx[0]]
-    vid_prompt = str(row.get('Video_Prompt', ''))
+    vid_prompt_raw = row.get('Video_Prompt', '')
+    vid_prompt = "" if pd.isna(vid_prompt_raw) else str(vid_prompt_raw).strip()
 
     if row.get('Type') == "Vocal" and vocal_mode == "Use Singer/Band Description":
         settings = pm.load_project_settings()
@@ -134,7 +135,7 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None):
         if perf_desc:
             vid_prompt = perf_desc
 
-    if pd.isna(vid_prompt) or not vid_prompt.strip():
+    if not vid_prompt:
         yield None, "Error: Missing Video Prompt."
         return
 

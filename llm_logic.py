@@ -151,9 +151,9 @@ def generate_concepts_logic(overarching_plot, llm_model, rough_concept, performa
 
         for _, row in new_df.iterrows():
             sid = str(row.get('Shot_ID', '')).strip()
-            prompt = str(row.get('Video_Prompt', '')).strip()
-
-            if pd.isna(prompt) or prompt.lower() == 'nan':
+            prompt_raw = row.get('Video_Prompt', '')
+            prompt = "" if pd.isna(prompt_raw) else str(prompt_raw).strip()
+            if prompt.lower() == 'nan':
                 prompt = ""
 
             match_idx = df.index[df['Shot_ID'].astype(str).str.upper() == sid.upper()].tolist()

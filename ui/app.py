@@ -17,10 +17,6 @@ from . import tab5_settings as tab5
 from . import tab6_help as tab6
 
 css = """
-.scrollable-gallery {
-    overflow-y: auto !important;
-    max-height: 600px !important;
-}
 .header-row {
     align-items: center !important;
     gap: 12px !important;
