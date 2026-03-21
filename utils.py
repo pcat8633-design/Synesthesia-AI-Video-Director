@@ -67,3 +67,15 @@ def format_time(seconds):
     m, s = divmod(int(seconds), 60)
     h, m = divmod(m, 60)
     return f"{h:02d}h{m:02d}m{s:02d}s"
+
+def format_eta(seconds_remaining):
+    """Format a remaining-seconds value into a compact human-readable string."""
+    if seconds_remaining <= 0:
+        return "done"
+    m, s = divmod(int(seconds_remaining), 60)
+    h, m = divmod(m, 60)
+    if h > 0:
+        return f"{h}h {m}m"
+    if m > 0:
+        return f"{m}m {s}s"
+    return f"{s}s"

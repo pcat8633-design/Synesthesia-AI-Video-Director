@@ -73,7 +73,8 @@ All shot durations are automatically locked to LTX-compatible frame counts (1–
 
 Select a **Generation Mode**:
 - *Generate Remaining Shots* — only shots that don't yet have a video
-- *Generate all Action Shots* / *Generate all Vocal Shots* — target one shot type
+- *Generate all Action Shots* / *Generate all Vocal Shots* — target one shot type (skips shots already at version count)
+- *Generate Remaining Action Shots* / *Generate Remaining Vocal Shots* — only missing/under-versioned shots of that type
 - *Regenerate all Shots* — delete all existing videos and regenerate from scratch
 
 Set how many **Versions per Shot** to generate (1–5). Having multiple versions gives you options to compare in Tab 4. Choose your **Resolution** (540p → 1080p). Click *Start Batch Generation* to begin. Click *Stop Batch Generation* to halt after the current shot finishes.
@@ -179,6 +180,19 @@ Pinokio sandboxes Wan2GP in its own Python environment. You must use Pinokio's P
 
 ---
 
+## Z-Image First Frame Mode
+
+When enabled in Tab 3, **Z-Image First Frame** mode generates a still image from the video prompt before each clip is rendered. That image is passed to LTX Desktop as the opening frame (image-to-video conditioning), giving each shot a more intentional, controlled starting composition.
+
+**How to use:**
+- On Tab 3, set the **First Frame Mode** radio to **Z-Image First Frame**
+- No configuration or LTX Desktop modifications are required — the image generation endpoint is built into LTX Desktop
+- Generated first-frame images are saved to `{project}/first_frames/`
+
+> Z-Image First Frame only works with the LTX Desktop backend. It has no effect with Wan2GP.
+
+---
+
 ## LTX Desktop VRAM Bypass
 
 LTX Desktop may refuse to run if your GPU VRAM is below its default threshold. You can bypass this on a **fresh install** (before launching the app for the first time):
@@ -198,6 +212,19 @@ if system == "Windows":
 
 4. Change `22` to a value less than or equal to your GPU's VRAM (e.g. `< 8` for an 8 GB card)
 5. Save the file, then start LTX Desktop — it will work, though generation may be slower
+
+---
+
+## ⚠️ Performance: Avoiding LTX RAM Leakage
+
+LTX Desktop can silently overflow from GPU VRAM into system RAM during a session. Once this happens, generation slows by approximately **10x** — a clip that normally takes 15 seconds can take 2–3 minutes.
+
+**How to avoid it:**
+- **Start from a fresh reboot** before each generation session — this is the single most effective step
+- **Single GPU system:** Close LM Studio before starting video generation to prevent VRAM contention. You can reopen it after the batch is done.
+- If generation suddenly slows mid-session, restart LTX Desktop (not just Synesthesia) to reclaim memory
+
+**Signs of leakage:** Windows Task Manager shows LTX Desktop processes consuming large amounts of System RAM.
 
 ---
 

@@ -175,6 +175,14 @@ Pinokio sandboxes Wan2GP in its own Python environment. You must use Pinokio's P
 5. **Strict vs. Fallback assembly** — use Fallback mode to preview your edit before all shots are done, then switch to Strict for the final render.
 6. **Hotkey** — press `Ctrl+R` in the terminal window to restart the application quickly without losing your project data.
 
+### ⚠️ Performance: Avoiding LTX RAM Leakage
+
+LTX Desktop can silently overflow from GPU VRAM into system RAM during a session. Once this happens, generation slows by approximately **10x** — a clip that normally takes 15 seconds can take 2–3 minutes.
+
+- **Start from a fresh reboot** before each generation session — this is the single most effective step
+- **Single GPU system:** Close LM Studio before starting video generation to prevent VRAM contention. You can reopen it after the batch is done.
+- If generation suddenly slows mid-session, restart LTX Desktop (not just Synesthesia) to reclaim memory
+
 ---
 
 ## Cloud LLM Prompt Template

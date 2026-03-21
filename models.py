@@ -62,6 +62,7 @@ class ProjectManager:
         self.stop_generation = False
         self.stop_video_generation = False
         self.is_generating = False
+        self.llm_busy = False
         self.character_bibles = {}  # {character_name: description}
 
         # Render Queue
@@ -73,6 +74,9 @@ class ProjectManager:
         # Time Tracking Variables
         self.total_time_spent = 0
         self.session_start_time = None
+
+        # GPU / RAM leakage warning (set by Tab 3 after each render)
+        self.ltx_ram_warning = ""
 
     def __deepcopy__(self, memo):
         import copy
@@ -111,7 +115,7 @@ class ProjectManager:
         clean_name = self.sanitize_name(name)
         path = os.path.join(self.base_dir, clean_name)
 
-        folders = ["assets", "audio_chunks", "videos", "renders", "cutting_room"]
+        folders = ["assets", "audio_chunks", "videos", "renders", "cutting_room", "first_frames"]
 
         if os.path.exists(path):
             return f"Project '{clean_name}' already exists."

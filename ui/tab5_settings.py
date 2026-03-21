@@ -31,8 +31,44 @@ def build(pm_state, llm_dropdown):
                 value=config.LM_STUDIO_URL,
                 placeholder="http://127.0.0.1:1234/v1",
             )
-        save_settings_btn = gr.Button("💾 Save Settings", variant="primary")
+            electricity_cost_in = gr.Number(
+                label="Electricity Cost ($/kWh)",
+                value=config.ELECTRICITY_COST,
+                minimum=0.0,
+                maximum=10.0,
+                step=0.001,
+                info="Used for render cost estimates. Default: $0.1805 (18.05¢/kWh)",
+            )
+            system_wattage_in = gr.Number(
+                label="System Wattage (W)",
+                value=config.SYSTEM_WATTAGE,
+                minimum=50,
+                maximum=5000,
+                step=10,
+                info="Full system draw during video generation. Default: 600W (RTX 5090 system)",
+            )
+        _gpu_choices = config.get_gpu_list()
+        _gpu_default_idx = config.GPU_MONITOR_INDEX
+        _gpu_default = next((c for c in _gpu_choices if c.startswith(str(_gpu_default_idx))), _gpu_choices[0])
+        gpu_monitor_drp = gr.Dropdown(
+            label="GPU to Monitor (VRAM leakage detection)",
+            choices=_gpu_choices,
+            value=_gpu_default,
+            info="Select the GPU used by LTX Desktop. Requires pynvml. For multi-GPU systems.",
+        )
+        with gr.Row():
+            save_settings_btn = gr.Button("💾 Save Settings", variant="primary")
+            calibration_reset_btn = gr.Button("🔄 Reset Render Calibration", variant="secondary")
         settings_status = gr.Textbox(label="Status", interactive=False)
+
+        with gr.Accordion("📊 Render Calibration Stats", open=False):
+            calibration_stats_txt = gr.Textbox(
+                label="Current Calibration Data",
+                value=config.get_calibration_summary(),
+                interactive=False,
+                lines=8,
+            )
+            calibration_refresh_btn = gr.Button("🔄 Refresh Stats", variant="secondary")
 
         with gr.Accordion("Wan2GP Setup Instructions", open=(config.VIDEO_BACKEND == "Wan2GP")) as wan2gp_accordion:
             gr.Markdown("""
@@ -122,14 +158,35 @@ Pinokio sandboxes Wan2GP in its own Python environment — you must use Pinokio'
         outputs=[video_backend_drp, video_api_url_in, wan2gp_accordion, backend_switch_status],
     )
 
-    def handle_save_settings(video_url, lm_url, backend):
-        status = config.save_global_url_settings(video_url, lm_url, backend)
+    def handle_save_settings(video_url, lm_url, backend, electricity_cost, system_wattage, gpu_monitor):
+        settings = {
+            "ltx_base_url": video_url,
+            "lm_studio_url": lm_url,
+            "video_backend": backend,
+            "electricity_cost": electricity_cost,
+            "system_wattage": system_wattage,
+            "gpu_monitor_index": gpu_monitor,
+        }
+        status = config.save_global_url_settings(settings)
         return status, gr.update(choices=LLMBridge().get_models())
 
     save_settings_btn.click(
         handle_save_settings,
-        inputs=[video_api_url_in, lm_url_in, video_backend_drp],
+        inputs=[video_api_url_in, lm_url_in, video_backend_drp, electricity_cost_in, system_wattage_in, gpu_monitor_drp],
         outputs=[settings_status, llm_dropdown],
+    )
+
+    calibration_reset_btn.click(
+        config.reset_render_calibration,
+        outputs=[settings_status],
+    ).then(
+        config.get_calibration_summary,
+        outputs=[calibration_stats_txt],
+    )
+
+    calibration_refresh_btn.click(
+        config.get_calibration_summary,
+        outputs=[calibration_stats_txt],
     )
 
     return {"video_backend_drp": video_backend_drp}

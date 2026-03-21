@@ -393,6 +393,7 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, dir
 
         pm.df.at[row_idx[0], 'Video_Path'] = local_path
         pm.df.at[row_idx[0], 'Status'] = 'Done'
+        pm.df.at[row_idx[0], 'Render_Resolution'] = resolution
         pm.save_data()
         yield local_path, "Done"
     else:

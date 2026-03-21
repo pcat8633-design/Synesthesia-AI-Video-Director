@@ -11,6 +11,48 @@ from utils import format_time
 
 _CPU_THREADS = os.cpu_count() or 1
 
+def _project_slug(pm):
+    """Return a filename-safe lowercase slug from the project name."""
+    import re
+    name = pm.current_project or ""
+    return re.sub(r'[^a-z0-9_]+', '_', name.lower()).strip('_')
+
+def _get_shot_resolution(pm, shot_id, fallback="1080p"):
+    """Look up Render_Resolution for a shot from pm.df; fall back if missing/NaN."""
+    try:
+        row = pm.df[pm.df['Shot_ID'] == shot_id]
+        if not row.empty and 'Render_Resolution' in row.columns:
+            res = row.iloc[0].get('Render_Resolution')
+            if res and str(res).strip() not in ('', 'nan'):
+                return str(res)
+    except Exception:
+        pass
+    return fallback
+
+
+def _render_cost_str(pm, fallback_resolution="1080p", generation_mode="LTX-Native"):
+    """Return a filename-safe cost string like '_cost0.08' using per-shot Render_Resolution.
+    Falls back to fallback_resolution for shots without a recorded resolution.
+    Uses SYSTEM_WATTAGE and ELECTRICITY_COST from config. Returns '' on any error."""
+    try:
+        df = pm.df
+        if df.empty:
+            return ""
+        has_video = df['Video_Path'].notna() & (df['Video_Path'].astype(str).str.strip() != "")
+        rendered = df[has_video].copy()
+        if rendered.empty:
+            return ""
+        total_render_time = 0.0
+        for _, row in rendered.iterrows():
+            res_val = row.get('Render_Resolution') if 'Render_Resolution' in row.index and pd.notna(row.get('Render_Resolution')) else None
+            res = str(res_val).strip() if res_val and str(res_val).strip() not in ('', 'nan') else fallback_resolution
+            dur = float(row['Duration'])
+            total_render_time += config.estimate_render_seconds(dur, res, generation_mode)
+        cost = (total_render_time / 3600.0) * (config.SYSTEM_WATTAGE / 1000.0) * config.ELECTRICITY_COST
+        return f"_cost{cost:.2f}"
+    except Exception:
+        return ""
+
 # ==========================================
 # LOGIC: VIDEO ASSEMBLY
 # ==========================================
@@ -122,7 +164,9 @@ def assemble_video(full_song_path, resolution, pm, fallback_mode=False, style_fi
         style_part = f"_{filter_slug}"
     elif filter_no_style:
         style_part = "_no_style"
-    out_path = os.path.join(pm.get_path("renders"), f"final_cut{style_part}_{time_str}.mp4")
+    slug = _project_slug(pm)
+    cost_part = _render_cost_str(pm, fallback_resolution=resolution)
+    out_path = os.path.join(pm.get_path("renders"), f"{slug}_final_cut{style_part}{cost_part}_{time_str}.mp4")
 
     try:
         final.write_videofile(
@@ -269,7 +313,9 @@ def assemble_video_with_shot_numbers(full_song_path, resolution, pm, style_filte
 
     total_seconds = pm.get_current_total_time()
     time_str = format_time(total_seconds)
-    out_path = os.path.join(pm.get_path("renders"), f"shot_review_{time_str}.mp4")
+    slug = _project_slug(pm)
+    cost_part = _render_cost_str(pm, fallback_resolution=resolution)
+    out_path = os.path.join(pm.get_path("renders"), f"{slug}_shot_review{cost_part}_{time_str}.mp4")
 
     try:
         final.write_videofile(
@@ -290,7 +336,7 @@ def assemble_video_with_shot_numbers(full_song_path, resolution, pm, style_filte
     return out_path
 
 
-def assemble_cutting_room_floor(full_song_path, resolution, pm):
+def assemble_cutting_room_floor(full_song_path, resolution, pm, audio_mode="Attach Full Song (Once)"):
     """Assemble all versions (cutting_room + active videos) into a single chronological showreel."""
     vid_dir = pm.get_path("videos")
     cut_dir = pm.get_path("cutting_room")
@@ -325,7 +371,10 @@ def assemble_cutting_room_floor(full_song_path, resolution, pm):
     clips_to_close = []
     for f in all_files:
         try:
-            clip = VideoFileClip(f).without_audio().set_fps(24)
+            if audio_mode == "Use LTX Clip Audio":
+                clip = VideoFileClip(f).set_fps(24)
+            else:
+                clip = VideoFileClip(f).without_audio().set_fps(24)
             if tuple(clip.size) != target_size:
                 clip = clip.resize(newsize=target_size)
             clips.append(clip)
@@ -343,10 +392,14 @@ def assemble_cutting_room_floor(full_song_path, resolution, pm):
         audio_path = pm.get_asset_path_if_exists("vocals.mp3")
 
     audio = None
-    if audio_path and os.path.exists(audio_path):
+    if audio_mode != "Use LTX Clip Audio" and audio_path and os.path.exists(audio_path):
         try:
             audio = AudioFileClip(audio_path)
-            if audio.duration > final.duration:
+            if audio_mode == "Loop Full Song" and audio.duration < final.duration:
+                loops = int(final.duration / audio.duration) + 2
+                from moviepy.editor import concatenate_audioclips
+                audio = concatenate_audioclips([audio] * loops).subclip(0, final.duration)
+            elif audio.duration > final.duration:
                 audio = audio.subclip(0, final.duration)
             final = final.set_audio(audio)
         except Exception as e:
@@ -354,7 +407,18 @@ def assemble_cutting_room_floor(full_song_path, resolution, pm):
 
     total_seconds = pm.get_current_total_time()
     time_str = format_time(total_seconds)
-    out_path = os.path.join(pm.get_path("renders"), f"cutting_room_floor_{time_str}.mp4")
+    slug = _project_slug(pm)
+    crf_cost = 0.0
+    for _f in all_files:
+        _sid = os.path.basename(_f).split('_')[0]
+        _res = _get_shot_resolution(pm, _sid, fallback=resolution)
+        try:
+            _dur = float(pm.df[pm.df['Shot_ID'] == _sid]['Duration'].values[0])
+        except Exception:
+            _dur = 3.0
+        crf_cost += config.estimate_render_seconds(_dur, _res) * (config.SYSTEM_WATTAGE / 1000.0) * config.ELECTRICITY_COST / 3600.0
+    cost_part = f"_cost{crf_cost:.2f}" if crf_cost > 0 else ""
+    out_path = os.path.join(pm.get_path("renders"), f"{slug}_cutting_room_floor{cost_part}_{time_str}.mp4")
 
     try:
         final.write_videofile(

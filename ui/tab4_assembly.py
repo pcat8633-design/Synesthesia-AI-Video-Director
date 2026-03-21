@@ -58,7 +58,13 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
         gr.Markdown("---")
         gr.Markdown("### 🗂️ Cutting Room Floor Compilation")
         gr.Markdown("Assembles every version of every shot (active + discarded) into a single video, grouped by shot in order, oldest version first.")
-        assemble_crf_btn = gr.Button("🗂️ Assemble Cutting Room Floor", variant="secondary")
+        with gr.Row():
+            assemble_crf_btn = gr.Button("🗂️ Assemble Cutting Room Floor", variant="secondary")
+            crf_audio_dropdown = gr.Dropdown(
+                choices=["Attach Full Song (Once)", "Loop Full Song", "Use LTX Clip Audio"],
+                value="Attach Full Song (Once)",
+                label="Audio Mode",
+            )
 
         gr.Markdown("---")
         gr.Markdown("### Previous Renders")
@@ -300,8 +306,8 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
     assemble_btn.click(assemble_numbered_and_refresh, inputs=[song_up, vid_resolution_dropdown, vid_style_filter_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
     assemble_current_btn.click(lambda s, res, sf, pm: assemble_and_refresh(s, res, sf, pm, True), inputs=[song_up, vid_resolution_dropdown, vid_style_filter_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
 
-    def assemble_crf_and_refresh(song_file, resolution, pm):
-        result = assemble_cutting_room_floor(get_file_path(song_file), resolution, pm)
+    def assemble_crf_and_refresh(song_file, resolution, audio_mode, pm):
+        result = assemble_cutting_room_floor(get_file_path(song_file), resolution, pm, audio_mode=audio_mode)
         gallery_data, render_paths = get_project_renders(pm)
         render_choices = [os.path.basename(p) for p in render_paths]
         if result and os.path.exists(str(result)):
@@ -309,7 +315,7 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
         else:
             return None, str(result), gallery_data, render_paths, gr.update(choices=render_choices, value=None)
 
-    assemble_crf_btn.click(assemble_crf_and_refresh, inputs=[song_up, vid_resolution_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
+    assemble_crf_btn.click(assemble_crf_and_refresh, inputs=[song_up, vid_resolution_dropdown, crf_audio_dropdown, pm_state], outputs=[final_video_out, assembly_status, renders_gallery, renders_state, render_select_dropdown])
 
     return {
         "tab4_ui": tab4_ui,

@@ -1,16 +1,33 @@
-Style dropdown for vocal vs action.  Custom Styles.  Directed by dropdown.  
+Come up with a plan for the following:
 
+Que Progress updates in real time but Current render progress does not.
 
-Create a plan to add the following:
+Also, provide any gotcha's or additional ideas you can think of about this plan.
 
-Character bibles.  Right now we are asking The local LLM in the templates to describe any recurring characters again in each prompt.  This would be fine I think if they could remember to do this :D  
+Gotchas
 
-Instead, lets try this.  Alter the prompt templates to have the LLM give all the recurring characters a first name and refer to them by their first name always.  Don't ask for a character description at all any more.  
+ 1. REQUIRED_COLUMNS addition breaks existing project CSVs: Old CSVs won't have Render_Resolution. Mitigation: When load_project() calls pd.read_csv(), missing columns are filled with NaN. All
+ resolution-lookup code falls back to a default gracefully. No migration needed.
+ 2. assemble_cutting_room_floor clips list: It scans videos/ and cutting_room/ directories. The shot_id extraction from filenames (filename.split('_')[0]) works as long as shot IDs don't contain underscores —
+  and they don't by convention (S01, A02, etc.). Verify this assumption holds.
+ 3. Settings dict — key name consistency: The dict keys in handle_save_settings must exactly match the keys read in save_global_url_settings. Use constants or document them clearly to avoid typo bugs when
+ adding future settings.
+ 4. _queue_est_cache is a closure variable: Defined inside build(), so it persists for the session. If the user somehow triggers two simultaneous queue processors (shouldn't happen given
+ pm.queue_processor_running guard), there's a race condition. Not a real concern in practice.
+ 5. NVML handle cache on GPU index change: When user changes GPU index in Tab 5 and saves, GPU_MONITOR_INDEX is updated globally. The next get_vram_usage() call will miss the cache (new index not in dict) and
+  fetch a fresh handle. Old handles for previous indices remain cached but unused — acceptable minor memory overhead (a few bytes per handle).
+ 6. First-shot alert threshold (3.0x): Stricter than the ongoing per-shot threshold (2.5x) to reduce false positives on the first render. The first render is often slow due to LTX Desktop warming up or model
+ loading; using 3.0x avoids crying wolf before the user has established a baseline. Consider making this a config constant FIRST_SHOT_WARN_FACTOR = 3.0.
+ 7. Calibration stats refresh: The stats textbox is populated once at Tab 5 build time (value=config.get_calibration_summary()). It won't auto-update as renders complete — user must click "Refresh Stats". An
+ auto-refresh every N renders would require wiring Tab 3 events to update Tab 5 components, which crosses tab boundaries and complicates the architecture. Keep manual refresh for now.
 
-Then, after the entire shot list has been generated we will do another LLM request.  This time feed in the full story so far; for intercut mode, we need just the action shots, for the other 2 modes we will need the full story.  Ask qwen to return character descriptions for every named character in the story in the csv format with two columns, character name, description. Include, gender, age, hair color, eye color, jewelry, makeup, clothing, etc.  This description becomes our "character bible."  Then, when we pass the video prompt into LTX we replace the proper names that Qwen originally used with the character bible instead.  We will need a safeguard to prevent the character bibles from being used more than once per each LTX prompt too I think.
+ ---
+ Additional Ideas
 
-These character bibles should also appear in the gui after being generated and be editable by the user.  There might be a few of them so better make it a collapsible list in the "Plot concept and generation" area.                        
-
-
-
-
+ - Settings validation on save: Before persisting, validate that ltx_base_url is a well-formed URL and electricity_cost > 0. Return a specific error message if not. Currently any value is silently accepted.
+ - Export calibration data: Add a "Copy to Clipboard" or "Export JSON" button for the calibration stats — useful for sharing hardware benchmarks or backing up before reset.
+ - Performance multiplier shortcut: Instead of the full calibration system, add a simple "Speed vs 5090 (%)" slider (50–200%) to Tab 5 that scales all baseline estimates. Faster to set up on a new machine
+ than waiting for calibration samples to accumulate.
+ - Render_Resolution for Vocal shots: Vocal shots have audio attached and produce a different output resolution at the same preset (as noted in CLAUDE.md). Consider storing both the requested resolution and
+ the actual output dimensions from the video file. The actual dimensions are already used during assembly (dynamically detected from the first clip) — logging them to the CSV would make cost estimates more
+ accurate.

@@ -9,12 +9,139 @@ import glob
 LTX_BASE_URL = "http://127.0.0.1:8000/api"
 LM_STUDIO_URL = "http://127.0.0.1:1234/v1"
 VIDEO_BACKEND = "LTX Desktop"  # "LTX Desktop" | "Wan2GP"
+ELECTRICITY_COST = 0.1805  # USD per kWh (default 18.05¢)
+SYSTEM_WATTAGE = 600.0     # Watts, full system draw during generation (default: RTX 5090 system)
+GPU_MONITOR_INDEX = 0      # pynvml device index to monitor for VRAM usage
+VRAM_WARN_THRESHOLD = 0.92 # Warn if dedicated VRAM usage > 92%
+SLOWDOWN_WARN_FACTOR = 2.5 # Warn if actual render took > 2.5x estimated time
+
+# pynvml state — initialized once on first call
+_nvml_initialized = False
+_nvml_available = False
+_nvml_handle_cache = {}  # {device_index: handle}
+
+def _ensure_nvml():
+    global _nvml_initialized, _nvml_available
+    if _nvml_initialized:
+        return _nvml_available
+    _nvml_initialized = True
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        _nvml_available = True
+    except Exception:
+        _nvml_available = False
+    return _nvml_available
+
+def get_vram_usage():
+    """Returns (used_gb, total_gb) tuple or None if pynvml unavailable or fails."""
+    if not _ensure_nvml():
+        return None
+    try:
+        import pynvml
+        if GPU_MONITOR_INDEX not in _nvml_handle_cache:
+            _nvml_handle_cache[GPU_MONITOR_INDEX] = pynvml.nvmlDeviceGetHandleByIndex(GPU_MONITOR_INDEX)
+        info = pynvml.nvmlDeviceGetMemoryInfo(_nvml_handle_cache[GPU_MONITOR_INDEX])
+        return (info.used / 1024**3, info.total / 1024**3)
+    except Exception:
+        _nvml_handle_cache.pop(GPU_MONITOR_INDEX, None)  # Evict stale handle on error
+        return None
+
+def get_gpu_list():
+    """Returns list of 'index — Name' strings for the Tab 5 GPU selector dropdown."""
+    if not _ensure_nvml():
+        return ["0 — (pynvml unavailable)"]
+    try:
+        import pynvml
+        count = pynvml.nvmlDeviceGetCount()
+        result = []
+        for i in range(count):
+            try:
+                h = pynvml.nvmlDeviceGetHandleByIndex(i)
+                name = pynvml.nvmlDeviceGetName(h)
+                if isinstance(name, bytes):
+                    name = name.decode()
+                result.append(f"{i} — {name}")
+            except Exception:
+                result.append(f"{i} — (unknown)")
+        return result if result else ["0 — (no GPUs found)"]
+    except Exception:
+        return ["0 — (pynvml error)"]
+
+# RTX 5090 baseline: estimated render seconds per second of output video.
+# I2V times are treated as total wall-clock estimates (Z-image pre-generation included).
+# TODO: benchmark Z-image step separately for more granular I2V estimates.
+RENDER_TIME_PER_SEC = {
+    "1080p": {"LTX-Native": 14.89, "Z-Image First Frame": 20.86},
+    "720p":  {"LTX-Native":  9.75, "Z-Image First Frame": 10.07},
+    "540p":  {"LTX-Native":  8.20, "Z-Image First Frame":  8.30},
+}
+
+CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "render_calibration.json")
+CALIBRATION_MAX_SAMPLES = 15
+
+def get_calibrated_rate(resolution, generation_mode):
+    """Return calibrated render rate (seconds per second of video).
+    Uses rolling average of recorded actuals; falls back to RENDER_TIME_PER_SEC baseline."""
+    key = f"{resolution}|{generation_mode}"
+    try:
+        if os.path.exists(CALIBRATION_FILE):
+            with open(CALIBRATION_FILE, "r") as f:
+                data = json.load(f)
+            samples = data.get("samples", {}).get(key, [])
+            if samples:
+                return sum(samples) / len(samples)
+    except Exception:
+        pass
+    table = RENDER_TIME_PER_SEC.get(resolution, RENDER_TIME_PER_SEC["720p"])
+    return table.get(generation_mode, table["LTX-Native"])
+
+def record_render_time(resolution, generation_mode, actual_duration_secs, actual_render_secs):
+    """Record a completed render's actual rate for self-calibration. Silently ignores errors."""
+    if actual_duration_secs <= 0 or actual_render_secs <= 0:
+        return
+    rate = actual_render_secs / actual_duration_secs
+    key = f"{resolution}|{generation_mode}"
+    try:
+        data = {"version": 1, "samples": {}}
+        if os.path.exists(CALIBRATION_FILE):
+            with open(CALIBRATION_FILE, "r") as f:
+                data = json.load(f)
+        samples = data.get("samples", {})
+        key_samples = samples.get(key, [])
+        key_samples.append(round(rate, 4))
+        if len(key_samples) > CALIBRATION_MAX_SAMPLES:
+            key_samples = key_samples[-CALIBRATION_MAX_SAMPLES:]
+        samples[key] = key_samples
+        data["samples"] = samples
+        with open(CALIBRATION_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+def reset_render_calibration():
+    """Delete the calibration file, reverting estimates to 5090 baseline."""
+    try:
+        if os.path.exists(CALIBRATION_FILE):
+            os.remove(CALIBRATION_FILE)
+        return "✅ Calibration reset to 5090 baseline."
+    except Exception as e:
+        return f"❌ Error resetting calibration: {e}"
+
+def estimate_render_seconds(duration_secs, resolution, generation_mode):
+    """Estimate render time using calibrated rate if available, else 5090 baseline."""
+    rate = get_calibrated_rate(resolution, generation_mode)
+    return float(duration_secs) * rate
+
+Z_IMAGE_WIDTH = 1920
+Z_IMAGE_HEIGHT = 1080
 
 REQUIRED_COLUMNS = [
     "Shot_ID", "Type",
     "Start_Time", "End_Time", "Duration",
     "Start_Frame", "End_Frame", "Total_Frames",
-    "Lyrics", "Video_Prompt", "Characters", "Video_Path", "All_Video_Paths", "Status"
+    "Lyrics", "Video_Prompt", "Characters", "Video_Path", "All_Video_Paths", "Status",
+    "Render_Resolution",
 ]
 
 RESOLUTION_MAP = {
@@ -34,7 +161,20 @@ def load_styles():
         return []
 
 STYLES = load_styles()
-STYLE_NAMES = ["None"] + [s["name"] for s in STYLES]
+STYLE_NAMES = ["None"] + [s["name"] for s in STYLES] + ["Custom"]
+
+DIRECTORS = [
+    "None", "Custom",
+    # American New Wave / Contemporary
+    "Wes Anderson", "David Lynch", "Quentin Tarantino", "Tim Burton",
+    "Terrence Malick", "Stanley Kubrick", "Edgar Wright", "Christopher Nolan",
+    "Sofia Coppola", "Darren Aronofsky", "Spike Jonze", "Michel Gondry",
+    # International Masters
+    "Yasujirō Ozu", "Akira Kurosawa", "Federico Fellini", "Wong Kar-wai",
+    "Park Chan-wook", "Denis Villeneuve", "Guillermo del Toro",
+    # Additional distinctive voices
+    "Jean-Luc Godard", "Werner Herzog", "David Fincher", "Paul Thomas Anderson",
+]
 
 def style_to_slug(style_name):
     """Convert a style display name to a filename-safe slug.
@@ -270,7 +410,7 @@ def save_global_llm(model_id):
         pass
 
 def load_global_url_settings():
-    global LTX_BASE_URL, LM_STUDIO_URL, VIDEO_BACKEND
+    global LTX_BASE_URL, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
     try:
         if os.path.exists(GLOBAL_SETTINGS_FILE):
             with open(GLOBAL_SETTINGS_FILE, "r") as f:
@@ -278,26 +418,64 @@ def load_global_url_settings():
                 LTX_BASE_URL = data.get("ltx_base_url", LTX_BASE_URL)
                 LM_STUDIO_URL = data.get("lm_studio_url", LM_STUDIO_URL)
                 VIDEO_BACKEND = data.get("video_backend", VIDEO_BACKEND)
+                ELECTRICITY_COST = float(data.get("electricity_cost", ELECTRICITY_COST))
+                SYSTEM_WATTAGE = float(data.get("system_wattage", SYSTEM_WATTAGE))
+                GPU_MONITOR_INDEX = int(data.get("gpu_monitor_index", GPU_MONITOR_INDEX))
     except:
         pass
 
-def save_global_url_settings(ltx_url, lm_url, video_backend="LTX Desktop"):
-    global LTX_BASE_URL, LM_STUDIO_URL, VIDEO_BACKEND
-    LTX_BASE_URL = ltx_url.strip()
-    LM_STUDIO_URL = lm_url.strip()
-    VIDEO_BACKEND = video_backend
+def save_global_url_settings(settings: dict):
+    """Accept a settings dict and persist all global settings to disk."""
+    global LTX_BASE_URL, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
+    LTX_BASE_URL = str(settings.get("ltx_base_url", LTX_BASE_URL)).strip()
+    LM_STUDIO_URL = str(settings.get("lm_studio_url", LM_STUDIO_URL)).strip()
+    VIDEO_BACKEND = settings.get("video_backend", VIDEO_BACKEND)
+    ELECTRICITY_COST = float(settings.get("electricity_cost", ELECTRICITY_COST))
+    SYSTEM_WATTAGE = float(settings.get("system_wattage", SYSTEM_WATTAGE))
+    raw_gpu = settings.get("gpu_monitor_index", GPU_MONITOR_INDEX)
+    GPU_MONITOR_INDEX = int(str(raw_gpu).split(" — ")[0]) if raw_gpu is not None else 0
     try:
         data = {}
         if os.path.exists(GLOBAL_SETTINGS_FILE):
             with open(GLOBAL_SETTINGS_FILE, "r") as f:
                 data = json.load(f)
-        data["ltx_base_url"] = LTX_BASE_URL
-        data["lm_studio_url"] = LM_STUDIO_URL
-        data["video_backend"] = VIDEO_BACKEND
+        data.update({
+            "ltx_base_url": LTX_BASE_URL,
+            "lm_studio_url": LM_STUDIO_URL,
+            "video_backend": VIDEO_BACKEND,
+            "electricity_cost": ELECTRICITY_COST,
+            "system_wattage": SYSTEM_WATTAGE,
+            "gpu_monitor_index": GPU_MONITOR_INDEX,
+        })
         with open(GLOBAL_SETTINGS_FILE, "w") as f:
             json.dump(data, f, indent=4)
         return "✅ Settings saved and applied."
     except Exception as e:
         return f"❌ Error saving settings: {e}"
+
+
+def get_calibration_summary():
+    """Return human-readable calibration stats string for display in Tab 5."""
+    try:
+        if not os.path.exists(CALIBRATION_FILE):
+            return "No calibration data yet. Run some renders to build up accuracy."
+        with open(CALIBRATION_FILE, "r") as f:
+            data = json.load(f)
+        samples = data.get("samples", {})
+        if not samples:
+            return "No calibration samples recorded."
+        lines = []
+        for key in sorted(samples.keys()):
+            s = samples[key]
+            if s:
+                avg = sum(s) / len(s)
+                res, mode = key.split("|", 1)
+                baseline_table = RENDER_TIME_PER_SEC.get(res, RENDER_TIME_PER_SEC["720p"])
+                baseline = baseline_table.get(mode, baseline_table["LTX-Native"])
+                pct = (avg / baseline * 100) if baseline > 0 else 0
+                lines.append(f"{key}: {len(s)} samples, avg {avg:.2f}s/s  ({pct:.0f}% of 5090 baseline)")
+        return "\n".join(lines) if lines else "No calibration samples recorded."
+    except Exception as e:
+        return f"Error reading calibration data: {e}"
 
 load_global_url_settings()
