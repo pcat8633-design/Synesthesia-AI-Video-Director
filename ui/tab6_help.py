@@ -79,7 +79,13 @@ Select a **Generation Mode**:
 - *Generate Remaining Action Shots* / *Generate Remaining Vocal Shots* — only missing/under-versioned shots of that type
 - *Regenerate all Shots* — delete all existing videos and regenerate from scratch
 
-Set how many **Versions per Shot** to generate (1–5). Having multiple versions gives you options to compare in Tab 4. Choose your **Resolution** (540p → 1080p). Click *Start Batch Generation* to begin. Click *Stop Batch Generation* to halt after the current shot finishes.
+Set how many **Versions per Shot** to generate (1–5). Having multiple versions gives you options to compare in Tab 4. Choose your **Resolution** (540p → 1080p). Shots over 5 seconds will automatically downgrade from 1080p to 720p. Choose a **Style** to apply a prompt style preset to all generated clips (styles can be edited per-project in the Style Editor accordion below the dropdowns). Choose a **Director** to append a directorial style cue to every prompt.
+
+Set **First Frame Mode**:
+- *LTX-Native* — standard text-to-video generation
+- *Z-Image First Frame* — generates a still image first and uses it as the opening frame for each clip; improves character consistency at the cost of dynamic camera motion (see [Z-Image First Frame Mode](#z-image-first-frame-mode) below)
+
+Click *Start Batch Generation* to begin. Use **⏸ Pause Queue** to pause between shots, **✖ Cancel All** to clear the remaining queue, or **⏹ Stop** to halt after the current shot finishes.
 
 **Vocal Shot Prompt Mode** controls which prompt drives video generation for Vocal shots:
 - *Use Singer/Band Description* — uses the performer/venue description from Tab 2
@@ -87,7 +93,7 @@ Set how many **Versions per Shot** to generate (1–5). Having multiple versions
 
 ### Single Shot Generation
 
-Select a specific shot from the dropdown, optionally edit its prompt inline (changes save automatically), then click *Generate Additional Version* to add another version without deleting existing ones.
+Select a specific shot from the dropdown, optionally edit its prompt inline (changes save automatically), then click *Generate Additional Version* to add another version without deleting existing ones. Use the **Camera Motion** dropdown to apply a specific camera move (dolly, jib, handheld, etc.) to this shot only.
 
 ### Gallery & Controls
 
@@ -105,17 +111,25 @@ All generated videos appear in the gallery with their Shot ID and frame count. C
 Select a shot from the dropdown to see all its generated versions side by side (up to 5 at once).
 - Click **⭐ Set as Active** on the version you want to use in the final edit
 - Click **✂️ Move to Cutting Room Floor** to move an unwanted version out of the videos folder (it goes to the `cutting_room/` subfolder, not deleted)
-- Use **➡️ Next Shot** to quickly cycle to the next shot that has multiple versions
+- Use **⬅️ Previous** / **➡️ Next** to step through all shots, or **⏮ Prev Multi-Version** / **⏭ Next Multi-Version** to jump only to shots that have more than one version — useful for quickly working through all the choices you need to make.
 
-The tab automatically refreshes its shot list when you switch to it.
+The tab automatically refreshes its shot list when you switch to it. Use the **Style Filter** dropdown to narrow the comparison view to clips generated with a specific style.
 
 ### Final Assembly
 
 Once you're satisfied with your active video selections:
-- **Assemble Final Video (Strictly Videos)** — stops with an error if any shot is missing a video. Use this for a complete edit.
-- **Assemble with Current Assets (Videos > Black Fallback)** — substitutes a black frame for any missing video. Useful for previewing a partial edit.
+- **🔢 Assemble with Shot Numbers** — assembles the video with each clip's Shot ID burned into the frame. Use this for QA review to identify exactly which clip is which before committing to a final edit.
+- **Assemble videos with black fallback** — the main assembly button. Substitutes a black frame for any shot that doesn't have a video yet, so you can preview a partial edit at any stage.
 
 The assembled video is written to the project's `renders/` folder. The full song audio (from Tab 1) is attached if available; otherwise the vocals file is used as a fallback.
+
+### Cutting Room Floor Compilation
+
+**🗂️ Assemble Cutting Room Floor** compiles every version of every shot — both active videos and anything moved to the cutting room — into a single long video, grouped by shot in timeline order with oldest version first. Useful for reviewing all your takes in one pass. The **Audio Mode** dropdown controls audio attachment: *Attach Full Song (Once)* adds the song audio at the start of the compilation, *Loop Full Song* loops it across the full duration, or *Use LTX Clip Audio* keeps the original audio from each individual clip.
+
+### Previous Renders
+
+The bottom of Tab 4 shows a gallery of all assembled videos in the project's `renders/` folder. Click a thumbnail or use the dropdown to load any previous render into the playback player.
 
 ---
 

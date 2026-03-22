@@ -93,9 +93,9 @@ For Windows users who prefer not to use the command line, batch files are includ
 
 1. **Create a Project** (Tab 1) — Give your project a name and click *Create New Project*.
 2. **Upload Assets** (Tab 1) — Upload an isolated vocal track (for timeline scanning), optionally upload the full song (for final assembly), and paste your lyrics.
-3. **Build the Timeline** (Tab 2) — Choose a mode, adjust silence detection settings, and click *Scan Vocals & Build Timeline*. The app splits your audio into Vocal and Action shots.
-4. **Generate Prompts** (Tab 2) — Select your LLM model, write a rough concept, then generate the overarching plot and video prompts with the bulk generation button.
-5. **Generate Videos** (Tab 3) — Pick a generation mode and resolution, then click *Start Batch Generation*. Your video backend will render each shot.
+3. **Build the Timeline** (Tab 2) — Choose a mode, adjust silence detection settings, and click *Scan Vocals & Build Timeline*. The app splits your audio into Vocal and Action shots. Shot durations range from 1–10 seconds; shots over 5 seconds require 720p or lower and will auto-downgrade from 1080p.
+4. **Generate Prompts** (Tab 2) — Select your LLM model, write a rough concept, then generate the overarching plot and video prompts with the bulk generation button. Use **Character Bibles** (also on Tab 2) to define recurring characters with a consistent visual description — bibles are automatically injected into prompts at generation time so characters look the same across unrelated shots.
+5. **Generate Videos** (Tab 3) — Pick a generation mode, resolution, and optionally enable **Z-Image First Frame** mode for improved character consistency (see Tab 6 help for details). Click *Start Batch Generation*. Your video backend will render each shot.
 6. **Review & Assemble** (Tab 4) — Compare video versions for each shot, pick the best take, and assemble the final video with audio.
 
 ### Video Modes
@@ -187,30 +187,34 @@ LTX Desktop can silently overflow from GPU VRAM into system RAM during a session
 
 ## Cloud LLM Prompt Template
 
-If you prefer not to run a local LLM, you can use a cloud-based model (such as Claude, ChatGPT, etc.) to generate your video prompts. Here's how:
+If you prefer not to run a local LLM, you can use a cloud-based model (such as Claude, ChatGPT, etc.) to generate your video prompts and character bibles. Here's how:
 
 1. **Export** your shot list from Tab 2 using the **Export CSV** button.
 2. **Open** your preferred cloud LLM in a browser.
 3. **Attach** the exported shot list file to your message.
 4. **Paste** the template below into the message, filling in the bracketed placeholders with your own details.
-5. **Send** the message and wait for the LLM to return the completed shot list.
-6. **Import** the completed file back into Synesthesia using the **Import CSV** button on Tab 2.
+5. **Send** the message and wait for the LLM to return both the completed shot list and the character bibles CSV.
+6. **Import** the completed shot list back into Synesthesia using the **Import CSV** button on Tab 2.
+7. **Import** the character bibles using the **Import Bibles CSV** button on Tab 2 — this populates the Character Bibles table and refreshes the Characters column in the shot list.
 
 ### Template (copy and paste this into your cloud LLM)
 
 ```
-Create a music video via AI video prompts for the following song. See the attached shot list with durations and frame counts. We need to tell a coherent story using the shots labeled "action" in the type column. Return the shot list file with each "Video_Prompt" field filled out.
+Create a music video via AI video prompts for the following song. See the attached shot list with durations and frame counts. We need to tell a coherent story using the shots labeled "action" in the type column. Return TWO files:
+
+1. The shot list CSV with each "Video_Prompt" field filled out.
+2. A separate character_bibles.csv file with two columns: "character_name" and "description". Include one row per recurring character who appears in the action shots. Each description should be a single dense paragraph covering the character's age, gender, ethnicity, hair colour and style, clothing, and any other distinguishing visual details — written so that an AI video model can reproduce the character's appearance consistently across multiple unrelated shots. Do not include the lead singer in the bibles; they are handled separately via the vocal shot description.
 
 The AI video prompt for the vocal shots should always be very similar to the following as we cut to the live performance. We need to focus on consistency and always being closeup so the lip-sync model has enough pixels to work with.
 
-"Handheld dynamic closeup shot of a [describe lead singer here] Dynamic camera movement with slight handheld shake, shallow depth of field, dramatic chiaroscuro lighting, 85mm lens, 24fps, high contrast, crowd silhouettes, energetic atmosphere, cinematic color grading, [describe color palette here] [name of singer] is careful to enunciate each word to the camera to account for their deaf sister's lip reading."
+"Handheld dynamic closeup shot of a [describe lead singer here] Dynamic camera movement with slight handheld shake, shallow depth of field, dramatic lighting, 85mm lens, 24fps, high contrast, band silhouettes, energetic atmosphere, cinematic color grading, [describe color palette here] [name of singer] is careful to enunciate each word to the camera to account for their deaf sister's lip reading."
 
 Follow the LTX prompt guide to create each "action" AI video model prompt:
 
 - Establish the shot. Use cinematography terms that match your preferred film genre. Include aspects like scale or specific category characteristics to further refine the style you're looking for.
 - Set the scene. Describe lighting conditions, color palette, surface textures, and atmosphere to shape the mood.
 - Describe the action. Write the core action as a natural sequence, flowing from beginning to end.
-- Define your character(s). Include age, hairstyle, clothing, and distinguishing details. Express emotions through physical cues.
+- Describe your characters by first name only in the prompt itself - the character bible feature will automatically insert the description.
 - Identify camera movement(s). Specify when the view should shift and how. Including how subjects or objects appear after the camera motion gives the model a better idea of how to finish the motion.
 - Keep your prompt in a single flowing paragraph to give the model a cohesive scene to work with.
 - Use present tense verbs to describe movement and action.

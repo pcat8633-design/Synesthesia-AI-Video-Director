@@ -416,7 +416,7 @@ def assemble_cutting_room_floor(full_song_path, resolution, pm, audio_mode="Atta
             _dur = float(pm.df[pm.df['Shot_ID'] == _sid]['Duration'].values[0])
         except Exception:
             _dur = 3.0
-        crf_cost += config.estimate_render_seconds(_dur, _res) * (config.SYSTEM_WATTAGE / 1000.0) * config.ELECTRICITY_COST / 3600.0
+        crf_cost += config.estimate_render_seconds(_dur, _res, "LTX-Native") * (config.SYSTEM_WATTAGE / 1000.0) * config.ELECTRICITY_COST / 3600.0
     cost_part = f"_cost{crf_cost:.2f}" if crf_cost > 0 else ""
     out_path = os.path.join(pm.get_path("renders"), f"{slug}_cutting_room_floor{cost_part}_{time_str}.mp4")
 
