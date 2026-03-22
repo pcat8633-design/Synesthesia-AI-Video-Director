@@ -72,6 +72,11 @@ def build(pm_state, current_proj_var, shared_shot_state):
             single_shot_dropdown = gr.Dropdown(label="Select Shot to Generate", choices=[], interactive=True)
             single_shot_btn = gr.Button("Generate Additional Version", variant="primary")
         with gr.Row():
+            single_shot_camera_dropdown = gr.Dropdown(
+                choices=config.CAMERA_MOTIONS, value="none",
+                label="Camera Motion (this shot only)"
+            )
+        with gr.Row():
             queue_pause_btn = gr.Button("⏸ Pause Queue")
             queue_cancel_btn = gr.Button("✖ Cancel All", variant="stop")
         single_shot_prompt_edit = gr.Textbox(label="Edit Video Prompt for Selected Shot", lines=3, interactive=True)
@@ -304,15 +309,32 @@ def build(pm_state, current_proj_var, shared_shot_state):
             return "💤 Queue is empty."
         return "\n".join(lines)
 
-    def add_to_render_queue(shot_id, resolution, vocal_mode, style, director, generation_mode, pm, delete_path=None):
+    def _effective_resolution(shot_id, resolution, df):
+        """Downgrade 1080p to 720p for shots longer than 5 seconds.
+        LTX Desktop only supports >5s clips at 720p or lower."""
+        if resolution != "1080p":
+            return resolution
+        try:
+            dur = float(df[df['Shot_ID'] == shot_id]['Duration'].values[0])
+            if dur > 5.0:
+                return "720p"
+        except Exception:
+            pass
+        return resolution
+
+    def add_to_render_queue(shot_id, resolution, vocal_mode, style, director, generation_mode, pm, delete_path=None, camera_motion="none"):
         if not shot_id:
             return "❌ No shot selected."
-        item = {'shot_id': shot_id, 'resolution': resolution, 'vocal_mode': vocal_mode,
+        effective_res = _effective_resolution(shot_id, resolution, pm.df)
+        item = {'shot_id': shot_id, 'resolution': effective_res, 'vocal_mode': vocal_mode,
                 'style': style, 'director': director, 'generation_mode': generation_mode,
-                'delete_path': delete_path}
+                'delete_path': delete_path, 'camera_motion': camera_motion}
         with pm.queue_lock:
             pm.render_queue.append(item)
-        return format_queue_status(pm)
+        status = format_queue_status(pm)
+        if effective_res != resolution:
+            status = f"⚠️ Shot {shot_id} is >5s — resolution downgraded to 720p.\n" + status
+        return status
 
     _queue_est_cache = [0.0, -1]  # [cached_estimate, last_queue_len]
 
@@ -339,7 +361,7 @@ def build(pm_state, current_proj_var, shared_shot_state):
         with pm.queue_lock:
             if pm.queue_processor_running or not pm.render_queue:
                 gal = get_project_videos(pm, proj)
-                yield gal, format_queue_status(pm), [item[0] for item in gal], 0, 0, "", "", "", ""
+                yield gal, format_queue_status(pm), [item[0] for item in gal], 0, 0, "", "", "", "", gr.update(), gr.update(), gr.update()
                 return
             pm.queue_processor_running = True
             pm.stop_video_generation = False
@@ -358,7 +380,7 @@ def build(pm_state, current_proj_var, shared_shot_state):
                         paused_lines.append(f"📋 QUEUE ({len(queue_snapshot)}):")
                         for i, it in enumerate(queue_snapshot, 1):
                             paused_lines.append(f"  {i}. {it['shot_id']} — {it['resolution']} — {it['style']}")
-                    yield gal, "\n".join(paused_lines), [item[0] for item in gal], 0, 0, "", "", "", ""
+                    yield gal, "\n".join(paused_lines), [item[0] for item in gal], 0, 0, "", "", "", "", gr.update(), gr.update(), gr.update()
                     time.sleep(0.5)
                     continue
 
@@ -386,7 +408,8 @@ def build(pm_state, current_proj_var, shared_shot_state):
                     current_item['shot_id'], current_item['resolution'],
                     current_item['vocal_mode'], pm, current_item['style'],
                     director=current_item.get('director'),
-                    generation_mode=current_item.get('generation_mode', 'LTX-Native')
+                    generation_mode=current_item.get('generation_mode', 'LTX-Native'),
+                    camera_motion=current_item.get('camera_motion', 'none')
                 ):
                     if path is None:
                         ltx_pct = 0
@@ -401,13 +424,15 @@ def build(pm_state, current_proj_var, shared_shot_state):
                         total_done = queue_elapsed + elapsed
                         total_dynamic_est = total_done + queue_remaining
                         queue_pct = min(100, int(total_done / max(total_dynamic_est, 1) * 100))
+                        render_pct = min(99, int(elapsed / max(shot_est, 1) * 100))
                         render_cost = (elapsed / 3600.0) * (config.SYSTEM_WATTAGE / 1000.0) * config.ELECTRICITY_COST
                         queue_cost_proj = (total_dynamic_est / 3600.0) * (config.SYSTEM_WATTAGE / 1000.0) * config.ELECTRICITY_COST
                         gal = get_project_videos(pm, proj)
                         yield (gal, format_queue_status(pm, current_item, msg), [item[0] for item in gal],
-                               ltx_pct, queue_pct,
+                               render_pct, queue_pct,
                                f"~{format_eta(render_remaining)}", f"~{format_eta(queue_remaining)}",
-                               f"${render_cost:.4f}", f"${queue_cost_proj:.3f}")
+                               f"${render_cost:.4f}", f"${queue_cost_proj:.3f}",
+                               gr.update(), gr.update(), gr.update())
 
                 actual_render_secs = time.time() - render_start
                 queue_elapsed += actual_render_secs
@@ -441,13 +466,19 @@ def build(pm_state, current_proj_var, shared_shot_state):
 
                 sync_video_directory(pm)
                 gal = get_project_videos(pm, proj)
-                yield gal, format_queue_status(pm), [item[0] for item in gal], 0, 0, "", "", "", ""
+                _shot_vids = sorted(
+                    glob.glob(os.path.join(pm.get_path("videos"), f"{current_item['shot_id']}_*.mp4")),
+                    key=os.path.getmtime
+                )
+                _new_vid = _shot_vids[-1] if _shot_vids else None
+                yield (gal, format_queue_status(pm), [item[0] for item in gal], 0, 0, "", "", "", "",
+                       _new_vid, current_item['shot_id'] if _new_vid else gr.update(), _new_vid or gr.update())
         finally:
             with pm.queue_lock:
                 pm.queue_processor_running = False
                 pm.stop_video_generation = False
             gal = get_project_videos(pm, proj)
-            yield gal, "💤 Queue is empty.", [item[0] for item in gal], 0, 0, "", "", "", ""
+            yield gal, "💤 Queue is empty.", [item[0] for item in gal], 0, 0, "", "", "", "", gr.update(), gr.update(), gr.update()
 
     def batch_enqueue_shots(mode, target_versions, resolution, vocal_mode, style, director, generation_mode, pm):
         if pm.current_project:
@@ -475,16 +506,20 @@ def build(pm_state, current_proj_var, shared_shot_state):
                 shot_ids = df['Shot_ID'].tolist()
 
         items_added = 0
+        downgraded_count = 0
         for shot_id in shot_ids:
             row = df[df['Shot_ID'] == shot_id]
             if row.empty:
                 continue
             if pd.isna(row.iloc[0].get('Video_Prompt')) or not str(row.iloc[0].get('Video_Prompt')).strip():
                 continue
+            effective_res = _effective_resolution(shot_id, resolution, df)
+            if effective_res != resolution:
+                downgraded_count += 1
             current_count = get_video_count_for_shot(shot_id, current_gallery)
             needed = max(0, target_versions - current_count)
             for _ in range(needed):
-                item = {'shot_id': shot_id, 'resolution': resolution,
+                item = {'shot_id': shot_id, 'resolution': effective_res,
                         'vocal_mode': vocal_mode, 'style': style,
                         'director': director, 'generation_mode': generation_mode,
                         'delete_path': None}
@@ -494,11 +529,17 @@ def build(pm_state, current_proj_var, shared_shot_state):
 
         if items_added == 0:
             return "ℹ️ No shots need generation.\n" + format_queue_status(pm), gr.update(value="Start Batch Generation")
-        return f"✅ Added {items_added} item(s) to queue.\n" + format_queue_status(pm), gr.update(value=f"⏳ Queue: {items_added} items")
+        msg = f"✅ Added {items_added} item(s) to queue."
+        if downgraded_count:
+            msg += f" ⚠️ {downgraded_count} shot(s) downgraded to 720p (duration >5s)."
+        return msg + "\n" + format_queue_status(pm), gr.update(value=f"⏳ Queue: {items_added} items")
 
     single_shot_btn.click(
-        add_to_render_queue,
-        inputs=[single_shot_dropdown, vid_resolution_dropdown, vid_vocal_prompt_mode, vid_style_dropdown, vid_director_dropdown, vid_firstframe_mode, pm_state],
+        lambda shot_id, res, vocal, style, director, gen_mode, cam, pm:
+            add_to_render_queue(shot_id, res, vocal, style, director, gen_mode, pm, camera_motion=cam),
+        inputs=[single_shot_dropdown, vid_resolution_dropdown, vid_vocal_prompt_mode,
+                vid_style_dropdown, vid_director_dropdown, vid_firstframe_mode,
+                single_shot_camera_dropdown, pm_state],
         outputs=[vid_gen_status]
     ).then(
         process_render_queue_if_idle,
@@ -506,7 +547,8 @@ def build(pm_state, current_proj_var, shared_shot_state):
         outputs=[vid_gallery, vid_gen_status, gallery_paths_state,
                  current_render_progress, queue_progress_bar,
                  current_render_eta, queue_eta_txt,
-                 current_render_cost, queue_cost_txt],
+                 current_render_cost, queue_cost_txt,
+                 vid_large_view, sel_shot_info_vid, selected_vid_path],
         show_progress="hidden"
     )
 
@@ -543,7 +585,8 @@ def build(pm_state, current_proj_var, shared_shot_state):
         outputs=[vid_gallery, vid_gen_status, gallery_paths_state,
                  current_render_progress, queue_progress_bar,
                  current_render_eta, queue_eta_txt,
-                 current_render_cost, queue_cost_txt],
+                 current_render_cost, queue_cost_txt,
+                 vid_large_view, sel_shot_info_vid, selected_vid_path],
         show_progress="hidden"
     ).then(
         lambda: gr.update(value="Start Batch Generation"),
@@ -582,10 +625,10 @@ def build(pm_state, current_proj_var, shared_shot_state):
 
     def handle_regen_vid_and_prompt(shot_id_txt, selected_path, resolution, vocal_mode, style, director, generation_mode, proj, pm):
         if not shot_id_txt:
-            yield gr.update(), "❌ No Shot ID selected", gr.update(), 0, 0, "", "", "", ""
+            yield gr.update(), "❌ No Shot ID selected", gr.update(), 0, 0, "", "", "", "", gr.update(), gr.update(), gr.update()
             return
         if pm.llm_busy:
-            yield gr.update(), "⚠️ LLM already running — please wait.", gr.update(), 0, 0, "", "", "", ""
+            yield gr.update(), "⚠️ LLM already running — please wait.", gr.update(), 0, 0, "", "", "", "", gr.update(), gr.update(), gr.update()
             return
         pm.llm_busy = True
         try:
@@ -596,14 +639,14 @@ def build(pm_state, current_proj_var, shared_shot_state):
             performance_desc = settings.get("performance_desc", "")
 
             gal = get_project_videos(pm, proj)
-            yield gal, f"⏳ Generating new prompt for {shot_id_txt}...", [item[0] for item in gal], 0, 0, "", "", "", ""
+            yield gal, f"⏳ Generating new prompt for {shot_id_txt}...", [item[0] for item in gal], 0, 0, "", "", "", "", gr.update(), gr.update(), gr.update()
             time.sleep(0.1)
 
             llm = LLMBridge()
             row_idx = pm.df.index[pm.df['Shot_ID'].astype(str).str.upper() == str(shot_id_txt).upper()].tolist()
             if not row_idx:
                 gal = get_project_videos(pm, proj)
-                yield gal, f"❌ Shot {shot_id_txt} not found.", [item[0] for item in gal], 0, 0, "", "", "", ""
+                yield gal, f"❌ Shot {shot_id_txt} not found.", [item[0] for item in gal], 0, 0, "", "", "", "", gr.update(), gr.update(), gr.update()
                 return
             index = row_idx[0]
             row = pm.df.loc[index]
@@ -632,7 +675,7 @@ def build(pm_state, current_proj_var, shared_shot_state):
 
             add_to_render_queue(shot_id_txt, resolution, vocal_mode, style, director, generation_mode, pm, delete_path=selected_path)
             gal = get_project_videos(pm, proj)
-            yield gal, f"✅ Prompt saved. Added to queue.\n" + format_queue_status(pm), [item[0] for item in gal], 0, 0, "", "", "", ""
+            yield gal, f"✅ Prompt saved. Added to queue.\n" + format_queue_status(pm), [item[0] for item in gal], 0, 0, "", "", "", "", gr.update(), gr.update(), gr.update()
         finally:
             pm.llm_busy = False
 
@@ -648,7 +691,8 @@ def build(pm_state, current_proj_var, shared_shot_state):
         outputs=[vid_gallery, vid_gen_status, gallery_paths_state,
                  current_render_progress, queue_progress_bar,
                  current_render_eta, queue_eta_txt,
-                 current_render_cost, queue_cost_txt],
+                 current_render_cost, queue_cost_txt,
+                 vid_large_view, sel_shot_info_vid, selected_vid_path],
         show_progress="hidden"
     )
 
@@ -659,7 +703,8 @@ def build(pm_state, current_proj_var, shared_shot_state):
         outputs=[vid_gallery, vid_gen_status, gallery_paths_state,
                  current_render_progress, queue_progress_bar,
                  current_render_eta, queue_eta_txt,
-                 current_render_cost, queue_cost_txt],
+                 current_render_cost, queue_cost_txt,
+                 vid_large_view, sel_shot_info_vid, selected_vid_path],
         show_progress="hidden"
     ).then(
         process_render_queue_if_idle,
@@ -667,7 +712,8 @@ def build(pm_state, current_proj_var, shared_shot_state):
         outputs=[vid_gallery, vid_gen_status, gallery_paths_state,
                  current_render_progress, queue_progress_bar,
                  current_render_eta, queue_eta_txt,
-                 current_render_cost, queue_cost_txt],
+                 current_render_cost, queue_cost_txt,
+                 vid_large_view, sel_shot_info_vid, selected_vid_path],
         show_progress="hidden"
     )
 

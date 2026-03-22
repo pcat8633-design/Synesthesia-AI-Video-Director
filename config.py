@@ -68,22 +68,28 @@ def get_gpu_list():
     except Exception:
         return ["0 — (pynvml error)"]
 
-# RTX 5090 baseline: estimated render seconds per second of output video.
-# I2V times are treated as total wall-clock estimates (Z-image pre-generation included).
-# TODO: benchmark Z-image step separately for more granular I2V estimates.
+# RTX 5090 baseline: estimated render seconds per second of output video (LTX-Native only).
 RENDER_TIME_PER_SEC = {
-    "1080p": {"LTX-Native": 14.89, "Z-Image First Frame": 20.86},
-    "720p":  {"LTX-Native":  9.75, "Z-Image First Frame": 10.07},
-    "540p":  {"LTX-Native":  8.20, "Z-Image First Frame":  8.30},
+    "1080p": {"LTX-Native": 14.89},
+    "720p":  {"LTX-Native":  9.75},
+    "540p":  {"LTX-Native":  8.20},
+}
+
+# RTX 5090 baseline: fixed overhead in seconds for Z-Image first-frame generation.
+# This is a constant cost per shot regardless of clip duration (generates one 1920x1080 still).
+Z_IMAGE_OVERHEAD_SECS = {
+    "1080p": 20.0,
+    "720p":  15.0,
+    "540p":  12.0,
 }
 
 CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "render_calibration.json")
 CALIBRATION_MAX_SAMPLES = 15
 
-def get_calibrated_rate(resolution, generation_mode):
-    """Return calibrated render rate (seconds per second of video).
+def get_calibrated_rate(resolution, generation_mode="LTX-Native"):
+    """Return calibrated render rate (seconds per second of video) for LTX-Native video generation.
     Uses rolling average of recorded actuals; falls back to RENDER_TIME_PER_SEC baseline."""
-    key = f"{resolution}|{generation_mode}"
+    key = f"{resolution}|LTX-Native"
     try:
         if os.path.exists(CALIBRATION_FILE):
             with open(CALIBRATION_FILE, "r") as f:
@@ -94,25 +100,59 @@ def get_calibrated_rate(resolution, generation_mode):
     except Exception:
         pass
     table = RENDER_TIME_PER_SEC.get(resolution, RENDER_TIME_PER_SEC["720p"])
-    return table.get(generation_mode, table["LTX-Native"])
+    return table["LTX-Native"]
+
+def get_calibrated_zimage_overhead(resolution):
+    """Return calibrated Z-Image fixed overhead in seconds.
+    Uses rolling average of recorded actuals; falls back to Z_IMAGE_OVERHEAD_SECS baseline."""
+    key = f"{resolution}|ZImageOverhead"
+    try:
+        if os.path.exists(CALIBRATION_FILE):
+            with open(CALIBRATION_FILE, "r") as f:
+                data = json.load(f)
+            samples = data.get("samples", {}).get(key, [])
+            if samples:
+                return sum(samples) / len(samples)
+    except Exception:
+        pass
+    return Z_IMAGE_OVERHEAD_SECS.get(resolution, 15.0)
 
 def record_render_time(resolution, generation_mode, actual_duration_secs, actual_render_secs):
-    """Record a completed render's actual rate for self-calibration. Silently ignores errors."""
+    """Record a completed render for self-calibration. Silently ignores errors.
+
+    For LTX-Native: records seconds-per-second-of-video rate.
+    For Z-Image First Frame: records the inferred fixed overhead (total time minus expected
+    video generation time) separately, so the two costs calibrate independently."""
     if actual_duration_secs <= 0 or actual_render_secs <= 0:
         return
-    rate = actual_render_secs / actual_duration_secs
-    key = f"{resolution}|{generation_mode}"
     try:
         data = {"version": 1, "samples": {}}
         if os.path.exists(CALIBRATION_FILE):
             with open(CALIBRATION_FILE, "r") as f:
                 data = json.load(f)
         samples = data.get("samples", {})
-        key_samples = samples.get(key, [])
-        key_samples.append(round(rate, 4))
-        if len(key_samples) > CALIBRATION_MAX_SAMPLES:
-            key_samples = key_samples[-CALIBRATION_MAX_SAMPLES:]
-        samples[key] = key_samples
+
+        if generation_mode == "Z-Image First Frame":
+            # Infer Z-image overhead = total time minus expected video generation portion.
+            # Use the current native rate estimate (calibrated or baseline).
+            native_rate = get_calibrated_rate(resolution, "LTX-Native")
+            inferred_overhead = actual_render_secs - (native_rate * actual_duration_secs)
+            if inferred_overhead > 0:
+                key = f"{resolution}|ZImageOverhead"
+                key_samples = samples.get(key, [])
+                key_samples.append(round(inferred_overhead, 2))
+                if len(key_samples) > CALIBRATION_MAX_SAMPLES:
+                    key_samples = key_samples[-CALIBRATION_MAX_SAMPLES:]
+                samples[key] = key_samples
+        else:
+            rate = actual_render_secs / actual_duration_secs
+            key = f"{resolution}|LTX-Native"
+            key_samples = samples.get(key, [])
+            key_samples.append(round(rate, 4))
+            if len(key_samples) > CALIBRATION_MAX_SAMPLES:
+                key_samples = key_samples[-CALIBRATION_MAX_SAMPLES:]
+            samples[key] = key_samples
+
         data["samples"] = samples
         with open(CALIBRATION_FILE, "w") as f:
             json.dump(data, f, indent=2)
@@ -129,9 +169,16 @@ def reset_render_calibration():
         return f"❌ Error resetting calibration: {e}"
 
 def estimate_render_seconds(duration_secs, resolution, generation_mode):
-    """Estimate render time using calibrated rate if available, else 5090 baseline."""
-    rate = get_calibrated_rate(resolution, generation_mode)
-    return float(duration_secs) * rate
+    """Estimate render time using calibrated values if available, else 5090 baseline.
+
+    Uses an additive model for Z-Image First Frame: native video generation time plus
+    a fixed per-shot overhead for the image generation step (which is constant regardless
+    of clip duration)."""
+    native_rate = get_calibrated_rate(resolution)
+    est = float(duration_secs) * native_rate
+    if generation_mode == "Z-Image First Frame":
+        est += get_calibrated_zimage_overhead(resolution)
+    return est
 
 Z_IMAGE_WIDTH = 1920
 Z_IMAGE_HEIGHT = 1080
@@ -162,6 +209,13 @@ def load_styles():
 
 STYLES = load_styles()
 STYLE_NAMES = ["None"] + [s["name"] for s in STYLES] + ["Custom"]
+
+CAMERA_MOTIONS = [
+    "none", "static", "focus_shift",
+    "dolly_in", "dolly_out",
+    "dolly_left", "dolly_right",
+    "jib_up", "jib_down",
+]
 
 DIRECTORS = [
     "None", "Custom",
@@ -470,10 +524,15 @@ def get_calibration_summary():
             if s:
                 avg = sum(s) / len(s)
                 res, mode = key.split("|", 1)
-                baseline_table = RENDER_TIME_PER_SEC.get(res, RENDER_TIME_PER_SEC["720p"])
-                baseline = baseline_table.get(mode, baseline_table["LTX-Native"])
-                pct = (avg / baseline * 100) if baseline > 0 else 0
-                lines.append(f"{key}: {len(s)} samples, avg {avg:.2f}s/s  ({pct:.0f}% of 5090 baseline)")
+                if mode == "ZImageOverhead":
+                    baseline = Z_IMAGE_OVERHEAD_SECS.get(res, 15.0)
+                    pct = (avg / baseline * 100) if baseline > 0 else 0
+                    lines.append(f"{key}: {len(s)} samples, avg {avg:.1f}s fixed overhead  ({pct:.0f}% of 5090 baseline)")
+                else:
+                    baseline_table = RENDER_TIME_PER_SEC.get(res, RENDER_TIME_PER_SEC["720p"])
+                    baseline = baseline_table.get(mode, baseline_table["LTX-Native"])
+                    pct = (avg / baseline * 100) if baseline > 0 else 0
+                    lines.append(f"{key}: {len(s)} samples, avg {avg:.2f}s/s  ({pct:.0f}% of 5090 baseline)")
         return "\n".join(lines) if lines else "No calibration samples recorded."
     except Exception as e:
         return f"Error reading calibration data: {e}"

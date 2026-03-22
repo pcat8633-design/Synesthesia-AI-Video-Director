@@ -25,8 +25,10 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
                 silence_thresh_sl = gr.Slider(-60, -20, value=-45, label="Silence Threshold (dB)")
             with gr.Row():
                 shot_mode_drp = gr.Dropdown(["Fixed", "Random"], value="Random", label="Shot Duration Mode")
-                min_shot_dur = gr.Slider(1, 5, value=2, label="Min Duration (s)")
-                max_shot_dur = gr.Slider(1, 5, value=4, label="Max Duration (s)")
+                min_shot_dur = gr.Slider(1, 10, value=2, label="Min Duration (s)")
+                max_shot_dur = gr.Slider(1, 10, value=4, label="Max Duration (s)")
+            with gr.Row():
+                gr.Markdown("ℹ️ Shots over 5 seconds require 720p or lower resolution. 1080p selections will automatically downgrade to 720p for these shots.")
             with gr.Row(visible=False) as scripted_duration_row:
                 scripted_total_dur = gr.Number(label="Total Duration (seconds)", value=60, precision=0)
                 scripted_shot_count = gr.Number(label="Number of Shots (alternative)", value=0, precision=0)
@@ -129,6 +131,12 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
             with gr.Row():
                 import_csv_btn = gr.UploadButton("Import CSV (Update Prompts)", file_types=[".csv"])
                 import_status = gr.Textbox(label="Import Status", interactive=False)
+            with gr.Row():
+                export_bibles_btn = gr.Button("Export Bibles CSV")
+                bibles_downloader = gr.File(label="Character Bibles CSV", interactive=False)
+            with gr.Row():
+                import_bibles_btn = gr.UploadButton("Import Bibles CSV", file_types=[".csv"])
+                import_bibles_status = gr.Textbox(label="Bible Import Status", interactive=False)
 
         shot_table = gr.Dataframe(headers=config.REQUIRED_COLUMNS, interactive=True, wrap=True, type="pandas")
 
@@ -321,6 +329,8 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
     export_csv_btn.click(lambda pm: pm.export_csv(), inputs=[pm_state], outputs=csv_downloader)
     import_csv_btn.upload(lambda f, pm: pm.import_csv(f), inputs=[import_csv_btn, pm_state], outputs=[import_status, shot_table])
     download_story_btn.click(generate_story_file, inputs=[pm_state], outputs=[story_downloader])
+    export_bibles_btn.click(lambda pm: pm.export_character_bibles(), inputs=[pm_state], outputs=bibles_downloader)
+    import_bibles_btn.upload(lambda f, pm: pm.import_character_bibles(f), inputs=[import_bibles_btn, pm_state], outputs=[import_bibles_status, bible_table])
 
     def save_manual_df_edits(new_df, pm):
         if pm.current_project:

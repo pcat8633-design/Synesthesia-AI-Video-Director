@@ -70,7 +70,7 @@ def scan_vocals_advanced(vocals_file_path, project_name, min_silence, silence_th
             chosen_int = int(math.ceil(chosen_raw))
 
             if chosen_int > max_safe_int: chosen_int = max_safe_int
-            if chosen_int > 5: chosen_int = 5
+            if chosen_int > 10: chosen_int = 10
 
             actual_dur = get_ltx_duration(chosen_int, fps)
 
@@ -85,8 +85,8 @@ def scan_vocals_advanced(vocals_file_path, project_name, min_silence, silence_th
         vocal_req_dur = voc_end - current_cursor
 
         while vocal_req_dur > 0:
-            if vocal_req_dur > 5.0:
-                chosen_int = 5
+            if vocal_req_dur > 10.0:
+                chosen_int = 10
             else:
                 chosen_int = int(math.ceil(vocal_req_dur))
                 if chosen_int < 1: chosen_int = 1
@@ -107,7 +107,7 @@ def scan_vocals_advanced(vocals_file_path, project_name, min_silence, silence_th
         chosen_int = int(math.ceil(chosen_raw))
 
         if chosen_int > max_safe_int: chosen_int = max_safe_int
-        if chosen_int > 5: chosen_int = 5
+        if chosen_int > 10: chosen_int = 10
 
         actual_dur = get_ltx_duration(chosen_int, fps)
         if actual_dur > remaining_time: break
@@ -118,7 +118,7 @@ def scan_vocals_advanced(vocals_file_path, project_name, min_silence, silence_th
         remaining_time = total_duration - current_cursor
 
     if remaining_time > 0.1:
-        chosen_int = max(1, min(int(math.ceil(remaining_time)), 5))
+        chosen_int = max(1, min(int(math.ceil(remaining_time)), 10))
         actual_dur = get_ltx_duration(chosen_int, fps)
         new_rows.append(create_row("Action", current_cursor, current_cursor + actual_dur, shot_counter))
 
@@ -166,8 +166,8 @@ def build_simple_timeline(total_duration, shot_type, shot_mode, min_dur, max_dur
 
         if chosen_int > max_safe_int:
             chosen_int = max_safe_int
-        if chosen_int > 5:
-            chosen_int = 5
+        if chosen_int > 10:
+            chosen_int = 10
 
         actual_dur = get_ltx_duration(chosen_int, fps)
         if actual_dur > remaining_time:
@@ -180,7 +180,7 @@ def build_simple_timeline(total_duration, shot_type, shot_mode, min_dur, max_dur
 
     # Handle remaining time
     if remaining_time > 0.1:
-        chosen_int = max(1, min(int(math.ceil(remaining_time)), 5))
+        chosen_int = max(1, min(int(math.ceil(remaining_time)), 10))
         actual_dur = get_ltx_duration(chosen_int, fps)
         new_rows.append(create_row(shot_type, current_cursor, current_cursor + actual_dur, shot_counter))
 

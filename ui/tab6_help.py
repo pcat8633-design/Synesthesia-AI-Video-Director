@@ -46,9 +46,9 @@ Adjust the sliders to fine-tune detection (Intercut mode) and shot lengths:
 - **Min Silence (ms)** — how long a pause must be to count as silence (Intercut only)
 - **Silence Threshold (dB)** — how quiet audio must be to be treated as silent (Intercut only)
 - **Shot Duration Mode** — *Fixed* uses the Min Duration for every shot; *Random* picks a random length between Min and Max
-- **Min/Max Duration** — the allowed range for shot lengths (1–5 seconds)
+- **Min/Max Duration** — the allowed range for shot lengths (1–10 seconds). Shots over 5 seconds require 720p or lower — 1080p selections will automatically downgrade to 720p for those shots.
 
-All shot durations are automatically locked to LTX-compatible frame counts (1–5 second increments at 24 fps).
+All shot durations are automatically locked to LTX-compatible frame counts (1–10 second increments at 24 fps).
 
 ### Step 2 — Generate Prompts
 
@@ -63,7 +63,9 @@ All shot durations are automatically locked to LTX-compatible frame counts (1–
 **Data Management:**
 - *Export CSV* — download the full shot list with all prompts for external editing
 - *Import CSV* — upload an edited CSV to push updated `Video_Prompt` values back in (Shot IDs and Types must match exactly)
-- *Download Story (.txt)* — export every shot's prompt as a readable text file
+- *Download Story (.txt)* — export every shot's prompt as a readable text file; includes a Character Bibles section at the end if bibles exist
+- *Export Bibles CSV* — download the character bible definitions (`character_name`, `description`) for external editing or cloud LLM use
+- *Import Bibles CSV* — upload an edited bibles CSV to replace the current character definitions; the Characters column in the shot table refreshes automatically
 
 ---
 
@@ -191,6 +193,31 @@ When enabled in Tab 3, **Z-Image First Frame** mode generates a still image from
 
 > Z-Image First Frame only works with the LTX Desktop backend. It has no effect with Wan2GP.
 
+### Trade-off: Character Consistency vs. Camera Motion
+
+Activating Z-Image mode produces a **large dampening effect on camera motion**. Because LTX Desktop must animate from a locked still image, dynamic camera movements and shot variety are significantly reduced — the model tends to produce more static or gently drifting shots rather than the expressive handheld, dolly, or tracking moves it would otherwise generate from a text prompt alone.
+
+**The trade-off:** better character consistency at the cost of dynamic camera work.
+
+To counter-act this, you need to write more assertive, explicit camera motion language in your prompts. The example below demonstrates the level of instruction needed — note the specific handheld tracking description, the subject movement, and the environmental motion (wind) all working together to force dynamism despite the conditioned first frame:
+
+```
+(Extreme close-up:1.3) A macro extreme close-up of Aoife, a young Irish woman in her late twenties
+with long wavy auburn hair, pale freckled skin, and striking green eyes, wearing a fitted dark green
+velvet dress with Celtic knotwork embroidery at the neckline. Dynamic handheld camera tracks Aoife
+swaying left and right as she sings into a tiny headset mic. Wind blows her hair gently. Shallow
+depth of field, dramatic lighting, 24fps, 85mm lens, high contrast, cinematic color grading, muted
+moss greens and warm amber tones with deep shadow blacks and flickers of firelight. Aoife is careful
+to enunciate each word to the camera to account for their deaf sister's lip reading.
+```
+
+**Key techniques in this example:**
+- Use a weighted emphasis token like `(Extreme close-up:1.3)` at the very start to assert shot scale before the model reads anything else
+- Name the subject immediately and pair the shot scale with a macro lens description
+- Explicitly say *"Dynamic handheld camera tracks [subject] [movement]"* — passive descriptions of camera style are not enough in Z-Image mode; the instruction must be active and specific
+- Add independent environmental motion (wind, flickering light) to give the model additional cues for movement that aren't dependent on camera work alone
+- End with a behavioural action for the subject to sell the performance feel
+
 ---
 
 ## LTX Desktop VRAM Bypass
@@ -230,30 +257,34 @@ LTX Desktop can silently overflow from GPU VRAM into system RAM during a session
 
 ## Cloud LLM Prompt Template
 
-If you prefer not to run a local LLM, you can use a cloud-based model (such as Claude, ChatGPT, etc.) to generate your video prompts. Here's how:
+If you prefer not to run a local LLM, you can use a cloud-based model (such as Claude, ChatGPT, etc.) to generate your video prompts and character bibles. Here's how:
 
 1. **Export** your shot list from Tab 2 using the **Export CSV** button.
 2. **Open** your preferred cloud LLM in a browser.
 3. **Attach** the exported shot list file to your message.
 4. **Paste** the template below into the message, filling in the bracketed placeholders with your own details.
-5. **Send** the message and wait for the LLM to return the completed shot list.
-6. **Import** the completed file back into Synesthesia using the **Import CSV** button on Tab 2.
+5. **Send** the message and wait for the LLM to return both the completed shot list and the character bibles CSV.
+6. **Import** the completed shot list back into Synesthesia using the **Import CSV** button on Tab 2.
+7. **Import** the character bibles using the **Import Bibles CSV** button on Tab 2 — this populates the Character Bibles table and refreshes the Characters column in the shot list.
 
 ### Template (copy and paste this into your cloud LLM)
 
 ```
-Create a music video via AI video prompts for the following song. See the attached shot list with durations and frame counts. We need to tell a coherent story using the shots labeled "action" in the type column. Return the shot list file with each "Video_Prompt" field filled out.
+Create a music video via AI video prompts for the following song. See the attached shot list with durations and frame counts. We need to tell a coherent story using the shots labeled "action" in the type column. Return TWO files:
+
+1. The shot list CSV with each "Video_Prompt" field filled out.
+2. A separate character_bibles.csv file with two columns: "character_name" and "description". Include one row per recurring character who appears in the action shots. Each description should be a single dense paragraph covering the character's age, gender, ethnicity, hair colour and style, clothing, and any other distinguishing visual details — written so that an AI video model can reproduce the character's appearance consistently across multiple unrelated shots. Do not include the lead singer in the bibles; they are handled separately via the vocal shot description.
 
 The AI video prompt for the vocal shots should always be very similar to the following as we cut to the live performance. We need to focus on consistency and always being closeup so the lip-sync model has enough pixels to work with.
 
-"Handheld dynamic closeup shot of a [describe lead singer here] Dynamic camera movement with slight handheld shake, shallow depth of field, dramatic chiaroscuro lighting, 85mm lens, 24fps, high contrast, crowd silhouettes, energetic atmosphere, cinematic color grading, [describe color palette here] [name of singer] is careful to enunciate each word to the camera to account for their deaf sister's lip reading."
+"Handheld dynamic closeup shot of a [describe lead singer here] Dynamic camera movement with slight handheld shake, shallow depth of field, dramatic lighting, 85mm lens, 24fps, high contrast, band silhouettes, energetic atmosphere, cinematic color grading, [describe color palette here] [name of singer] is careful to enunciate each word to the camera to account for their deaf sister's lip reading."
 
 Follow the LTX prompt guide to create each "action" AI video model prompt:
 
 - Establish the shot. Use cinematography terms that match your preferred film genre. Include aspects like scale or specific category characteristics to further refine the style you're looking for.
 - Set the scene. Describe lighting conditions, color palette, surface textures, and atmosphere to shape the mood.
 - Describe the action. Write the core action as a natural sequence, flowing from beginning to end.
-- Define your character(s). Include age, hairstyle, clothing, and distinguishing details. Express emotions through physical cues.
+- Describe your characters by first name only in the prompt itself - the character bible feature will automatically insert the description.
 - Identify camera movement(s). Specify when the view should shift and how. Including how subjects or objects appear after the camera motion gives the model a better idea of how to finish the motion.
 - Keep your prompt in a single flowing paragraph to give the model a cohesive scene to work with.
 - Use present tense verbs to describe movement and action.

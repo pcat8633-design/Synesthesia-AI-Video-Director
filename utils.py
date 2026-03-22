@@ -43,14 +43,14 @@ def snap_to_frame(seconds, fps=24):
 def get_ltx_frame_count(target_seconds, fps=24):
     """
     Calculates LTX Desktop-compliant frame counts (locked to whole seconds do not change this).
-    1s = 25f, 2s = 49f, 3s = 73f, 4s = 97f, 5s = 121f.
+    1s=25f, 2s=49f, 3s=73f, 4s=97f, 5s=121f, 6s=145f, 7s=169f, 8s=193f, 9s=217f, 10s=241f.
     """
     target_int = int(math.ceil(target_seconds))
 
     if target_int < 1:
         target_int = 1
-    if target_int > 5:
-        target_int = 5
+    if target_int > 10:         # MAX: 10 seconds (720p or lower only above 5s)
+        target_int = 10
 
     total_frames = target_int * fps
     backend_frames = round((total_frames - 1) / 8) * 8 + 1

@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 
 import gradio as gr
 import pandas as pd
@@ -88,7 +89,7 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
         if not paths_str or pd.isna(paths_str):
             all_paths = []
         else:
-            all_paths = [p.strip() for p in paths_str.split(",") if p.strip()]
+            all_paths = [p.strip() for p in paths_str.split(",") if p.strip() and os.path.exists(p.strip())]
 
         if not style_filter or style_filter == "All Styles":
             paths = all_paths
@@ -247,7 +248,19 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
         os.makedirs(cut_dir, exist_ok=True)
         fname = os.path.basename(path)
         dest = os.path.join(cut_dir, fname)
-        shutil.move(path, dest)
+        moved = False
+        for attempt in range(5):
+            try:
+                shutil.move(path, dest)
+                moved = True
+                break
+            except PermissionError:
+                if attempt < 4:
+                    time.sleep(0.3)
+        if not moved:
+            # File still locked after retries (e.g. ffprobe hold) — return current view unchanged
+            choices = pm.df[pm.df["All_Video_Paths"] != ""]["Shot_ID"].dropna().unique().tolist() if not pm.df.empty else []
+            return [gr.update(choices=choices, value=shot_id)] + update_comparison_view(shot_id, style_filter, pm) + [gr.update(), gr.update()]
         sync_video_directory(pm)
 
         choices = pm.df[pm.df["All_Video_Paths"] != ""]["Shot_ID"].dropna().unique().tolist() if not pm.df.empty else []

@@ -124,11 +124,11 @@ def get_project_videos(pm, project_name=None):
                     caption = f"{caption} ({output} frames)"
                     FRAME_COUNT_CACHE[f] = caption
                 else:
-                    caption = f"{caption} (Error reading frames)"
-                    FRAME_COUNT_CACHE[f] = caption
+                    caption = f"{caption} (? frames)"
+                    # not cached — transient failure, retry on next call
             except Exception:
-                caption = f"{caption} (Error)"
-                FRAME_COUNT_CACHE[f] = caption
+                caption = f"{caption} (? frames)"
+                # not cached — transient failure (e.g. file locked by ffprobe), retry on next call
 
         gallery_data.append((f, caption))
 
@@ -243,7 +243,7 @@ def generate_zimage_first_frame(prompt, shot_id, pm):
     yield (local_path, None)
 
 
-def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, director=None, generation_mode="LTX-Native"):
+def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, director=None, generation_mode="LTX-Native", camera_motion="none"):
     row_idx = pm.df.index[pm.df['Shot_ID'].astype(str).str.upper() == str(shot_id).upper()].tolist()
     if not row_idx:
         yield None, "Error: Shot not found in timeline."
@@ -295,7 +295,7 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, dir
         "aspectRatio": "16:9",
         "duration": str(row['Duration']),
         "fps": "24",
-        "cameraMotion": "none",
+        "cameraMotion": camera_motion,
         "audio": "false"
     }
 
