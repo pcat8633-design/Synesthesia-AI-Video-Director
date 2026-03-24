@@ -1,0 +1,87 @@
+[
+    {
+        "name": "LTX - 90s CGI",
+        "prompt": "A scene rendered in the style of early 1990s 3D CGI computer graphics, featuring {prompt}. The visuals have primitive Gouraud shading, low-resolution textures, blocky low-poly geometry, and basic raytraced reflections. The lighting is harsh and artificial, evoking classic retro cutscenes and early virtual reality.",
+        "negative_prompt": "photorealistic, modern rendering, high definition, sub-surface scattering, global illumination, highly detailed, realistic textures"
+    },
+    {
+        "name": "LTX - Claymation",
+        "prompt": "A stop-motion claymation scene of {prompt}. The characters and environment are crafted from tactile, sculpted modeling clay with visible fingerprints and slight physical imperfections. The animation has a tactile, physical presence, shot under controlled miniature studio lighting with soft, warm shadows.",
+        "negative_prompt": "CGI, 2D animation, flat, digital drawing, smooth perfect surfaces, realistic humans, photorealistic"
+    },
+    {
+        "name": "LTX - Film Noir",
+        "prompt": "A classic 1940s film noir scene showing {prompt}. The cinematography is strictly black and white with high-contrast chiaroscuro lighting, deep impenetrable shadows, and harsh highlights. The atmosphere is moody and tense, featuring a subtle cinematic film grain and soft focus on the edges of the frame.",
+        "negative_prompt": "color, vibrant, bright daylight, flat lighting, modern, low contrast, digital video look"
+    },
+    {
+        "name": "LTX - Puppetry",
+        "prompt": "A live-action television puppetry scene featuring {prompt}. The subjects are constructed from colorful felt, fleece, and foam, with expressive features and practical physical movements. The environment is a highly detailed miniature practical set, lit with theatrical stage lighting and a shallow depth of field.",
+        "negative_prompt": "CGI, 3D render, cartoon, 2D animation, human actors, photorealistic skin, digital effects"
+    },
+    {
+        "name": "LTX - Grindhouse Exploitation",
+        "prompt": "A gritty 1970s grindhouse exploitation film scene of {prompt}. The footage has a raw aesthetic with heavy, coarse film grain, faded vintage color grading, and a warm, dirty hue. The image is marred by visible celluloid scratches, dust, and occasional splice marks, lit with harsh practical lighting.",
+        "negative_prompt": "clean, pristine, digital 4k, smooth, modern color grading, high quality, flawless lens"
+    },
+    {
+        "name": "LTX - 90s Cel Anime",
+        "prompt": "A vintage 1990s era cel-shaded anime scene depicting {prompt}. The animation features hand-drawn line art, flat vibrant colors, and detailed painted matte backgrounds. The visual style captures the nostalgic essence of classic Japanese OVA animation, complete with authentic CRT phosphor bloom and slight color bleeding.",
+        "negative_prompt": "3D render, modern digital anime, CGI, realistic, 2.5D, live action, photorealistic"
+    },
+    {
+        "name": "LTX - Procedural Glitch",
+        "prompt": "A digital procedural glitch art scene where {prompt}. The imagery is heavily distorted by databending, pixel sorting, and VHS tracking errors. Bright RGB chromatic aberration, scanline interference, and macroblocking artifacts fracture the picture, creating a chaotic, cyberpunk digital aesthetic.",
+        "negative_prompt": "clean, clear, natural, realistic, perfect condition, smooth, organic, analog film"
+    },
+    {
+        "name": "LTX - Synthwave",
+        "prompt": "A neon-drenched synthwave music video scene of {prompt}. The palette is saturated magenta, electric cyan, and deep violet against an infinite black void. Geometric grid lines recede toward the horizon beneath a giant chrome sun. Practical neon tube lighting and backlit smoke haze shape every form. The aesthetic draws from 1980s Miami Vice, retrowave album art, and early Daft Punk videos.",
+        "negative_prompt": "natural daylight, muted colors, organic textures, live action realism, dusty, desaturated, modern photography"
+    },
+    {
+        "name": "LTX - Silent Cinema",
+        "prompt": "A black and white 1920s silent cinema scene depicting {prompt}. The footage resembles hand-cranked 35mm nitrate film with natural corner vignetting, high-contrast orthochromatic exposure, and blown-out skies. Acting is broad and theatrical. A soft flicker, light film grain, and occasional frame stuttering give the image a ghostly, archival quality.",
+        "negative_prompt": "color, sound design, modern clothing, digital, clean image, CGI, contemporary, realistic skin tones"
+    },
+    {
+        "name": "LTX - VHS Home Video",
+        "prompt": "A 1980s consumer VHS camcorder recording of {prompt}. The video has soft, blooming colors with luminance noise and a gentle horizontal scanline roll. The white balance is warm and slightly greenish, typical of late-1980s camcorders. Slight color bleeding bleeds at high-contrast edges and a low-resolution, slightly smeared quality permeates every frame.",
+        "negative_prompt": "4K, sharp, cinematic, professional camera, film grain, high contrast, color graded, studio lighting, clean"
+    },
+    {
+        "name": "LTX - Ukiyo-e",
+        "prompt": "A traditional Japanese ukiyo-e woodblock print depicting {prompt}. The image is composed of bold, flat areas of color divided by precise ink outlines. Visible woodgrain texture shows through the paper. The composition features stylized clouds, dramatic perspective, and decorative natural motifs in the manner of Hokusai and Hiroshige. Figures are elegantly stylized with expressive silhouettes.",
+        "negative_prompt": "photorealistic, 3D, CGI, modern, digital painting, photograph, soft gradients, Western realism, animation"
+    },
+    {
+        "name": "LTX - Spaghetti Western",
+        "prompt": "A 1960s Sergio Leone spaghetti western scene of {prompt}. Cinematography alternates between extreme close-ups of weathered faces and vast, desolate desert landscapes shot on ultra-wide anamorphic lenses. The color palette is bleached and sun-scorched with warm amber shadows. Heat haze shimmers off the parched earth and dust motes float in shafts of harsh afternoon light.",
+        "negative_prompt": "modern, urban, lush greenery, soft light, digital sharpness, gentle, blue tones, foggy, overcast"
+    },
+    {
+        "name": "LTX - Psychedelic 60s",
+        "prompt": "A 1960s psychedelic rock era scene of {prompt}. The visuals are drenched in swirling, saturated colors with organic shapes morphing and pulsating. Double-exposure and optical printing effects layer kaleidoscopic patterns over the action. The color palette draws from lava lamp oranges, electric purples, and acid greens, evoking classic 1960s concert posters and underground experimental film.",
+        "negative_prompt": "clean, realistic, digital, minimal, flat, static, black and white, muted, contemporary"
+    },
+    {
+        "name": "LTX - Oil Painting",
+        "prompt": "A baroque oil painting brought to life, depicting {prompt}. The scene is rendered with thick impasto brushwork and rich Rembrandt-style chiaroscuro, deep warm amber shadows bleeding into dramatic bright highlights. Visible canvas texture runs across the entire frame. Figures are posed with the theatrical gravitas of Dutch Golden Age masters, and every surface has the luminous depth of layered oil glazes.",
+        "negative_prompt": "flat, animation, sketch, modern, photorealistic, CGI, watercolor, line art, digital, clean, vector"
+    },
+    {
+        "name": "LTX - Super 8",
+        "prompt": "A sun-drenched Super 8 home movie of {prompt}. The footage has warm Kodachrome colors with a soft, slightly desaturated quality and heavy film grain. Gentle light blooms when the camera pans toward the sun, and dust specks drift lazily across the frame. A slight hand-held instability and natural pulse give the footage an intimate, treasured-memory quality evoking the early 1970s.",
+        "negative_prompt": "sharp, digital, 4K, clean, professional, stable, color graded, studio, modern, blue tones"
+    },
+    {
+        "name": "LTX - Neon Noir",
+        "prompt": "A rain-soaked neon noir scene of {prompt}. Wet streets mirror reflections of crimson and cobalt neon signs. Dense fog and steam diffuse the artificial light into dramatic halos. The cinematography uses deep focus with partially obscuring foreground elements creating layered depth. The oppressive, electric atmosphere draws from Blade Runner and Heat — a city that never sleeps and never gets warm.",
+        "negative_prompt": "daylight, dry streets, warm sunlight, cheerful, bright, pastoral, natural light, countryside, clean"
+    },
+    {
+        "name": "LTX - Soviet Constructivist",
+        "prompt": "A Soviet constructivist propaganda film scene of {prompt}. The composition uses bold geometric shapes, dramatic low-angle hero shots, and dynamic diagonal lines inspired by Dziga Vertov and Rodchenko. The footage is tinted sepia with high contrast and visible celluloid scratches. Extreme perspective distortion and montage-style juxtaposition give the visuals a raw, revolutionary agitprop energy.",
+        "negative_prompt": "color, modern, subtle, digital, commercial, symmetrical, Hollywood, gentle, pastel, realistic"
+    }
+]

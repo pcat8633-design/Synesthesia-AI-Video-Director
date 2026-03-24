@@ -1,3 +1,6 @@
 {
-    "last_llm": "qwen/qwen3.5-9b"
+    "last_llm": "qwen/qwen3.5-9b",
+    "ltx_base_url": "http://127.0.0.1:8000/api",
+    "lm_studio_url": "http://127.0.0.1:1234/v1",
+    "video_backend": "LTX Desktop"
 }

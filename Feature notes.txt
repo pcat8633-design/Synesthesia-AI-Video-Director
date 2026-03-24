@@ -1,0 +1,35 @@
+Come up with a plan for the following:
+
+We need to make some alterations to the CSV shot list upload validation to better account for the "all vocals" "all action" and "scripted" modes.
+
+In "all vocals" or "all action" mode, the user should be able to freely alter the shot lengths, number of shots, and shot type with the exception that the TOTAL length must still match the existing shot list to accommodate the audio track.  We don't want to put a heavy math burden on the user though; in order to support an easier process, the user will edit the "duration" column only.  It will be up to the import function to recalculate the start time, end time, duration, end frame and total frames.  We will also need to validate a valid duration to match our existing frame rules.  In order to do this we will snap the users selection to the nearest valid duration.
+
+"intercut" mode should keep the validations it has now in order to ensure the precise cut to singers on vocal detection.
+
+"scripted" mode validation should function like "all action" mode without the need to validate total length as LTX will provide its own audio in this mode.
+
+We probably need to add an extra validation to confirm that the user hasn't skipped any shots. 
+
+the Video_Prompt column logic (lines 190–202) is slightly inconsistent — if Video_Prompt is absent but
+  Type did change, it saves and returns success. If Video_Prompt is absent and nothing changed, it returns an error
+  rather than just a no-op success.
+
+We will also need to update the documentation in readme.md and tab 6 help to reflect these changes.
+
+Also, provide any gotcha's or additional ideas you can think of about this plan.
+
+
+
+ ---
+ Additional Ideas
+
+ - Settings validation on save: Before persisting, validate that ltx_base_url is a well-formed URL and electricity_cost > 0. Return a specific error message if not. Currently any value is silently accepted.
+ - Export calibration data: Add a "Copy to Clipboard" or "Export JSON" button for the calibration stats — useful for sharing hardware benchmarks or backing up before reset.
+ - Performance multiplier shortcut: Instead of the full calibration system, add a simple "Speed vs 5090 (%)" slider (50–200%) to Tab 5 that scales all baseline estimates. Faster to set up on a new machine
+ than waiting for calibration samples to accumulate.
+ - Render_Resolution for Vocal shots: Vocal shots have audio attached and produce a different output resolution at the same preset (as noted in CLAUDE.md). Consider storing both the requested resolution and
+ the actual output dimensions from the video file. The actual dimensions are already used during assembly (dynamically detected from the first clip) — logging them to the CSV would make cost estimates more
+ accurate.
+
+
+
