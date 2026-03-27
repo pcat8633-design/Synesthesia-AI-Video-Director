@@ -187,7 +187,7 @@ REQUIRED_COLUMNS = [
     "Shot_ID", "Type",
     "Start_Time", "End_Time", "Duration",
     "Start_Frame", "End_Frame", "Total_Frames",
-    "Lyrics", "Video_Prompt", "Characters", "Video_Path", "All_Video_Paths", "Status",
+    "Lyrics", "Video_Prompt", "First_Frame_Prompt", "First_Frame_Image_Path", "First_Frame_Image_Source", "Characters", "Video_Path", "All_Video_Paths", "Status",
     "Render_Resolution",
 ]
 
@@ -286,6 +286,19 @@ LTX_SYSTEM_PROMPT = """You are an expert cinematography AI director writing vide
 8. Detail scale: Match your detail to the shot scale (Closeups need more precise detail than wide shots).
 9. Camera focus: When describing camera movement, focus on the camera's relationship to the subject.
 10. Length: Write 4 to 8 descriptive sentences to cover all key aspects."""
+
+DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE = (
+    "Redesign this video prompt to be an image prompt representing the first frame of the video. "
+    "It is ok to keep descriptions of camera position, type, and usage but remove anything about passage of time or motion. "
+    "If there are multiple actions described, describe only the first one. "
+    "Keep your prompt as close to the original as possible while following these guidelines. "
+    "There should be no text overlays mention about the image. "
+    "Return the new image prompt only, no other text. "
+    "For example, do not include a sentence at the end of the image prompt listing the correctly followed instructions :D "
+    "This will just be misinterpreted by the image model AS additional instructions. "
+    "Thanks! \n\nVideo prompt: {prompt}"
+)
+ZIMAGE_PROMPT_SYSTEM_PROMPT = "You are an expert still image prompt writer for AI image generators."
 
 SCRIPTED_PROMPT_TEMPLATE = """Create a short narrative film via AI video prompts while adhering to the following main character, gender, settings, and rough concept.  See also the following csv shot list with durations and frame counts.  Return the shot list csv data with each "Video_Prompt" field filled out. include the Shot_ID and Type fields for these rows.  Do NOT include any other text in your reply.  Enclose the video prompt column in "" to prevent any commas inside the video prompt from corrupting the data.
 Follow the ltx prompt guide below to create each "action" prompt. Give each recurring character a unique first name and refer to them ONLY by that first name throughout — do NOT describe their physical appearance in the prompts. A separate character bible will inject visual descriptions automatically to keep characters consistent.
