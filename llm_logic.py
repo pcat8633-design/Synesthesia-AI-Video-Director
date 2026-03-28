@@ -9,6 +9,7 @@ import pandas as pd
 
 import config
 from models import LLMBridge
+from video import apply_character_bibles, resolve_style_data
 
 # ==========================================
 # LOGIC: LLM GENERATION
@@ -161,12 +162,20 @@ def generate_concepts_logic(overarching_plot, llm_model, rough_concept, performa
             match_idx = df.index[df['Shot_ID'].astype(str).str.upper() == sid.upper()].tolist()
             if match_idx:
                 df.at[match_idx[0], 'Video_Prompt'] = prompt
+                if 'Prompt_Override' in df.columns:
+                    df.at[match_idx[0], 'Prompt_Override'] = ''
+                if 'Prompt_Override_Text' in df.columns:
+                    df.at[match_idx[0], 'Prompt_Override_Text'] = ''
 
         # Post-process: In Intercut mode, override Vocal shots with performance description
         if video_mode == "Intercut":
             for index, row in df.iterrows():
                 if row['Type'] == 'Vocal':
                     df.at[index, 'Video_Prompt'] = performance_desc
+                    if 'Prompt_Override' in df.columns:
+                        df.at[index, 'Prompt_Override'] = ''
+                    if 'Prompt_Override_Text' in df.columns:
+                        df.at[index, 'Prompt_Override_Text'] = ''
 
         pm.df = df
         pm.save_data()
@@ -268,6 +277,130 @@ def generate_character_bibles_logic(pm, llm_model, video_mode, bible_sys_prompt=
     bible_df = pd.DataFrame(list(bibles.items()), columns=["character_name", "description"])
     names_list = ", ".join(bibles.keys())
     yield f"✅ Character bibles generated for {len(bibles)} character(s): {names_list}", bible_df, pm.df
+
+
+def generate_all_firstframe_prompts_logic(pm, llm_model, zimage_template, style=None, director=None):
+    """Bulk-generate and cache First_Frame_Prompt for all shots (single-GPU pre-generation path).
+
+    For Vocal shots: assembles and converts performance_desc once and reuses for all Vocal shots.
+    For Action shots: assembles and converts each shot's Video_Prompt individually.
+    Style, character bibles, and director are injected before LLM conversion so the LLM
+    sees the same fully-assembled prompt that LTX will receive during video generation.
+    Skips shots with blank Video_Prompt. Skips shots already cached.
+    Yields status strings for display in the UI.
+    """
+    if pm.df.empty or not pm.current_project:
+        yield "❌ No project loaded."
+        return
+    if "First_Frame_Prompt" not in pm.df.columns:
+        pm.df["First_Frame_Prompt"] = ""
+
+    settings = pm.load_project_settings()
+    if not llm_model:
+        llm_model = settings.get("llm_model", "qwen3-vl-8b-instruct-abliterated-v2.0")
+    if not zimage_template or not zimage_template.strip():
+        zimage_template = settings.get("zimage_prompt_template", config.DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE)
+
+    llm = LLMBridge()
+
+    # Resolve style data once — shared across all shots
+    style_data = resolve_style_data(style, pm) if style and style != "None" else None
+
+    def _assemble_prompt(base_prompt):
+        """Apply character bibles, style, and director — matching video.py assembly order."""
+        p = base_prompt
+        if pm.character_bibles:
+            p = apply_character_bibles(p, pm.character_bibles)
+        if style_data:
+            p = style_data["prompt"].replace("{prompt}", p)
+        if director and director != "None":
+            effective_director = director
+            if director == "Custom":
+                effective_director = settings.get("custom_director", "")
+            if effective_director:
+                p += f". This video was directed by {effective_director}."
+        return p
+
+    # Project-level vocal cache — keyed on the fully-assembled prompt so it invalidates
+    # when style, character bibles, or director change
+    perf_desc = settings.get("performance_desc", "")
+    assembled_vocal = _assemble_prompt(perf_desc) if perf_desc else ""
+    vocal_ffp_cache = None
+    if (settings.get("zimage_vocal_source_assembled") == assembled_vocal
+            and settings.get("zimage_vocal_first_frame_prompt")):
+        vocal_ffp_cache = settings["zimage_vocal_first_frame_prompt"]
+
+    total = len(pm.df)
+    skipped_empty = 0
+    skipped_cached = 0
+    generated = 0
+
+    for i, (idx, row) in enumerate(pm.df.iterrows()):
+        shot_id = row.get("Shot_ID", f"row {i}")
+        yield f"⏳ [{i+1}/{total}] Processing {shot_id}..."
+
+        raw_vp = row.get("Video_Prompt", "")
+        if pd.isna(raw_vp) or not str(raw_vp).strip():
+            skipped_empty += 1
+            continue
+
+        # Skip if already cached
+        existing = row.get("First_Frame_Prompt", "")
+        if existing and not pd.isna(existing) and str(existing).strip():
+            skipped_cached += 1
+            continue
+
+        shot_type = row.get("Type", "")
+        is_override = str(row.get('Prompt_Override', '')).strip().lower() == 'true'
+
+        if is_override:
+            override_text = str(row.get('Prompt_Override_Text', '')).strip()
+            if not override_text:
+                skipped_empty += 1
+                continue
+            assembled_for_ffp = override_text  # already fully assembled; skip _assemble_prompt
+        elif shot_type == "Vocal" and assembled_vocal:
+            assembled_for_ffp = None  # handled below via vocal cache path
+        else:
+            assembled_for_ffp = _assemble_prompt(str(raw_vp).strip())
+
+        if is_override:
+            user_msg = zimage_template.replace("{prompt}", assembled_for_ffp)
+            result = llm.query(config.ZIMAGE_PROMPT_SYSTEM_PROMPT, user_msg, llm_model)
+            pm.df.at[idx, "First_Frame_Prompt"] = result
+        elif shot_type == "Vocal" and assembled_vocal:
+            if vocal_ffp_cache is not None:
+                # Reuse project-level cached vocal first-frame prompt
+                pm.df.at[idx, "First_Frame_Prompt"] = vocal_ffp_cache
+            else:
+                user_msg = zimage_template.replace("{prompt}", assembled_vocal)
+                result = llm.query(config.ZIMAGE_PROMPT_SYSTEM_PROMPT, user_msg, llm_model)
+                vocal_ffp_cache = result
+                pm.df.at[idx, "First_Frame_Prompt"] = result
+                # Save project-level cache keyed on the assembled prompt
+                pm.save_project_settings({
+                    "zimage_vocal_first_frame_prompt": result,
+                    "zimage_vocal_source_assembled": assembled_vocal,
+                })
+        else:
+            user_msg = zimage_template.replace("{prompt}", assembled_for_ffp)
+            result = llm.query(config.ZIMAGE_PROMPT_SYSTEM_PROMPT, user_msg, llm_model)
+            pm.df.at[idx, "First_Frame_Prompt"] = result
+
+        generated += 1
+
+        if pm.stop_generation:
+            pm.save_data()
+            yield f"🛑 Stopped. Generated {generated} prompt(s) before stopping."
+            return
+
+    pm.save_data()
+    parts = [f"✅ Done. Generated {generated} first-frame prompt(s)."]
+    if skipped_cached:
+        parts.append(f"♻️ {skipped_cached} already cached (skipped).")
+    if skipped_empty:
+        parts.append(f"⚠️ {skipped_empty} skipped (no video prompt).")
+    yield " ".join(parts)
 
 
 def stop_gen(pm):

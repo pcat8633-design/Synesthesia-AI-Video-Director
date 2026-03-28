@@ -143,38 +143,56 @@ def build(pm_state, shared_shot_state, current_proj_var, shot_table, song_up, vi
                    outputs=[compare_shot_dropdown, shot_table, renders_gallery, renders_state, render_select_dropdown, vid_style_filter_dropdown])
 
     def get_next_shot(current_shot, pm):
-        if pm.df.empty: return gr.update()
-        choices = pm.df[pm.df["All_Video_Paths"] != ""]["Shot_ID"].dropna().unique().tolist()
-        if not choices: return gr.update(value=None)
+        if pm.df.empty:
+            gr.Warning("No project loaded.")
+            return gr.update()
+        choices = pm.df[pm.df["All_Video_Paths"].fillna("") != ""]["Shot_ID"].dropna().unique().tolist()
+        if not choices:
+            gr.Warning("No shots with renders found.")
+            return gr.update(choices=[], value=None)
         if current_shot not in choices:
             all_shots = pm.df["Shot_ID"].dropna().unique().tolist()
             if current_shot in all_shots:
+                gr.Info("Current shot has no renders — navigating to nearest shot with renders.")
                 curr_idx = all_shots.index(current_shot)
                 for i in range(1, len(all_shots) + 1):
                     check_idx = (curr_idx + i) % len(all_shots)
                     if all_shots[check_idx] in choices:
-                        return gr.update(value=all_shots[check_idx])
-            return gr.update(value=choices[0])
+                        return gr.update(choices=choices, value=all_shots[check_idx])
+            else:
+                gr.Warning("Current shot no longer exists — jumping to first available.")
+            return gr.update(choices=choices, value=choices[0])
         idx = choices.index(current_shot)
+        if idx == len(choices) - 1:
+            gr.Info("Reached the last rendered shot — wrapping to beginning.")
         next_idx = (idx + 1) % len(choices)
-        return gr.update(value=choices[next_idx])
+        return gr.update(choices=choices, value=choices[next_idx])
 
     def get_prev_shot(current_shot, pm):
-        if pm.df.empty: return gr.update()
-        choices = pm.df[pm.df["All_Video_Paths"] != ""]["Shot_ID"].dropna().unique().tolist()
-        if not choices: return gr.update(value=None)
+        if pm.df.empty:
+            gr.Warning("No project loaded.")
+            return gr.update()
+        choices = pm.df[pm.df["All_Video_Paths"].fillna("") != ""]["Shot_ID"].dropna().unique().tolist()
+        if not choices:
+            gr.Warning("No shots with renders found.")
+            return gr.update(choices=[], value=None)
         if current_shot not in choices:
             all_shots = pm.df["Shot_ID"].dropna().unique().tolist()
             if current_shot in all_shots:
+                gr.Info("Current shot has no renders — navigating to nearest shot with renders.")
                 curr_idx = all_shots.index(current_shot)
                 for i in range(1, len(all_shots) + 1):
                     check_idx = (curr_idx - i) % len(all_shots)
                     if all_shots[check_idx] in choices:
-                        return gr.update(value=all_shots[check_idx])
-            return gr.update(value=choices[-1])
+                        return gr.update(choices=choices, value=all_shots[check_idx])
+            else:
+                gr.Warning("Current shot no longer exists — jumping to last available.")
+            return gr.update(choices=choices, value=choices[-1])
         idx = choices.index(current_shot)
+        if idx == 0:
+            gr.Info("Reached the first rendered shot — wrapping to end.")
         prev_idx = (idx - 1) % len(choices)
-        return gr.update(value=choices[prev_idx])
+        return gr.update(choices=choices, value=choices[prev_idx])
 
     prev_shot_btn.click(get_prev_shot, inputs=[compare_shot_dropdown, pm_state], outputs=[compare_shot_dropdown])
     next_shot_btn.click(get_next_shot, inputs=[compare_shot_dropdown, pm_state], outputs=[compare_shot_dropdown])

@@ -187,7 +187,7 @@ REQUIRED_COLUMNS = [
     "Shot_ID", "Type",
     "Start_Time", "End_Time", "Duration",
     "Start_Frame", "End_Frame", "Total_Frames",
-    "Lyrics", "Video_Prompt", "First_Frame_Prompt", "First_Frame_Image_Path", "First_Frame_Image_Source", "Characters", "Video_Path", "All_Video_Paths", "Status",
+    "Lyrics", "Video_Prompt", "First_Frame_Prompt", "First_Frame_Image_Path", "First_Frame_Image_Source", "Prompt_Override", "Prompt_Override_Text", "Characters", "Video_Path", "All_Video_Paths", "Status",
     "Render_Resolution",
 ]
 
@@ -451,6 +451,60 @@ DEFAULT_PERF_USER_TEMPLATE_SCRIPTED = (
 )
 
 # ==========================================
+# GLOBAL DEFAULTS — keys that can be promoted to global and seeded into new projects
+# ==========================================
+
+GLOBALIZABLE_KEYS = frozenset({
+    # Prompt templates
+    "plot_sys_prompt_music", "plot_user_template_music",
+    "plot_sys_prompt_scripted", "plot_user_template_scripted",
+    "perf_sys_prompt_music", "perf_user_template_music",
+    "perf_sys_prompt_scripted", "perf_user_template_scripted",
+    "concepts_bulk_template", "concepts_vocals_template", "concepts_scripted_template",
+    "bible_sys_prompt", "bible_user_template",
+    "prompt_template", "zimage_prompt_template",
+    # Timeline defaults
+    "min_silence", "silence_thresh", "shot_mode", "min_dur", "max_dur", "video_mode",
+    # Video generation preferences
+    "firstframe_mode", "llm_image_prompt_mode", "first_frame_reuse_mode",
+    "vocal_prompt_mode", "last_resolution", "last_versions",
+    "last_camera_motion", "last_director", "last_style",
+})
+
+_CODE_DEFAULTS = {
+    "plot_sys_prompt_music": DEFAULT_PLOT_SYSTEM_PROMPT_MUSIC,
+    "plot_user_template_music": DEFAULT_PLOT_USER_TEMPLATE_MUSIC,
+    "plot_sys_prompt_scripted": DEFAULT_PLOT_SYSTEM_PROMPT_SCRIPTED,
+    "plot_user_template_scripted": DEFAULT_PLOT_USER_TEMPLATE_SCRIPTED,
+    "perf_sys_prompt_music": DEFAULT_PERF_SYSTEM_PROMPT_MUSIC,
+    "perf_user_template_music": DEFAULT_PERF_USER_TEMPLATE_MUSIC,
+    "perf_sys_prompt_scripted": DEFAULT_PERF_SYSTEM_PROMPT_SCRIPTED,
+    "perf_user_template_scripted": DEFAULT_PERF_USER_TEMPLATE_SCRIPTED,
+    "concepts_bulk_template": BULK_PROMPT_TEMPLATE,
+    "concepts_vocals_template": ALL_VOCALS_PROMPT_TEMPLATE,
+    "concepts_scripted_template": SCRIPTED_PROMPT_TEMPLATE,
+    "bible_sys_prompt": CHARACTER_BIBLE_SYSTEM_PROMPT,
+    "bible_user_template": CHARACTER_BIBLE_USER_TEMPLATE,
+    "prompt_template": DEFAULT_CONCEPT_PROMPT,
+    "zimage_prompt_template": DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE,
+    "min_silence": 700,
+    "silence_thresh": -45,
+    "shot_mode": "Random",
+    "min_dur": 2,
+    "max_dur": 4,
+    "video_mode": "Intercut",
+    "firstframe_mode": "LTX-Native",
+    "llm_image_prompt_mode": "Use video prompt as-is",
+    "first_frame_reuse_mode": "Use cached prompt",
+    "vocal_prompt_mode": "Use Singer/Band Description",
+    "last_resolution": "1080p",
+    "last_versions": 1,
+    "last_camera_motion": "none",
+    "last_director": "None",
+    "last_style": "None",
+}
+
+# ==========================================
 # GLOBAL MEMORY
 # ==========================================
 GLOBAL_SETTINGS_FILE = "global_settings.json"
@@ -514,11 +568,30 @@ def save_global_url_settings(settings: dict):
             "system_wattage": SYSTEM_WATTAGE,
             "gpu_monitor_index": GPU_MONITOR_INDEX,
         })
+        for key in GLOBALIZABLE_KEYS:
+            if key in settings:
+                data[key] = settings[key]
         with open(GLOBAL_SETTINGS_FILE, "w") as f:
             json.dump(data, f, indent=4)
         return "✅ Settings saved and applied."
     except Exception as e:
         return f"❌ Error saving settings: {e}"
+
+
+def get_global_defaults() -> dict:
+    """Return all GLOBALIZABLE_KEYS with values from global_settings.json,
+    falling back to hardcoded _CODE_DEFAULTS for any key not yet customised."""
+    result = dict(_CODE_DEFAULTS)
+    try:
+        if os.path.exists(GLOBAL_SETTINGS_FILE):
+            with open(GLOBAL_SETTINGS_FILE, "r") as f:
+                data = json.load(f)
+            for key in GLOBALIZABLE_KEYS:
+                if key in data:
+                    result[key] = data[key]
+    except Exception:
+        pass
+    return result
 
 
 def get_calibration_summary():

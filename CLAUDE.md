@@ -30,6 +30,45 @@ Because LTX output resolutions are unpredictable, `RESOLUTION_MAP` uses standard
 - **keyboard** is used for the Ctrl+R restart hotkey.
 - **`styles.json`** — optional file in the project root that defines named prompt style presets; loaded at startup by `config.py`.
 
+## Settings Persistence — Rules for New Features
+
+Synesthesia uses a **two-tier settings model**. Every user-adjustable control must fit into one of these tiers; session-only controls should be the rare exception.
+
+### Tier 1 — Global defaults (`global_settings.json`)
+
+Stored by `config.save_global_url_settings()`. Loaded at startup by `config.load_global_url_settings()` into module-level globals. Seeded into every new project's `settings.json` via `config.get_global_defaults()` in `models.create_project()`.
+
+**What belongs here:** API endpoints, wattage/cost settings, any setting defined in `config.GLOBALIZABLE_KEYS` that has been promoted by the user via "📌 Make Current Project Settings Default" (Tab 5).
+
+`config.GLOBALIZABLE_KEYS` is the authoritative whitelist of settings that *can* become global defaults. `config._CODE_DEFAULTS` maps every key in that frozenset to its hardcoded fallback constant.
+
+### Tier 2 — Project settings (`projects/<name>/settings.json`)
+
+Stored by `pm.save_project_settings(dict)` and read by `pm.load_project_settings()`. Each project's file starts as a copy of the current global defaults (seeded on creation) and can diverge freely per project.
+
+**What belongs here:** Everything the user adjusts in Tab 2 (timeline settings, prompt templates, concept/plot), Tab 3 generation preferences (resolution, first-frame mode, style, director, etc.), and any other per-project state.
+
+**What does NOT belong here:** Purely ephemeral UI navigation state (e.g. which shot is selected in a gallery scroll).
+
+### Adding a new UI control — checklist
+
+1. **Decide the tier.** Ask: does this setting make sense as a new-project default? If yes, add its key to `GLOBALIZABLE_KEYS` and its code-level fallback to `_CODE_DEFAULTS` in `config.py`.
+
+2. **Auto-save on change.** Wire a `.change()` (dropdowns/sliders/radios) or `.blur()` (textboxes) handler that calls `pm.save_project_settings({"key": value})`. Tab 2 uses `auto_save_tab2` with a shared inputs list; Tab 3 uses `auto_save_tab3_prefs`. Add new controls to the appropriate function's inputs list and settings dict.
+
+3. **Restore on project load.** Add the value to `handle_load()`'s return tuple in `ui/app.py` using `settings.get("key", fallback)`, and add the corresponding component to the `outputs=[...]` list of `t1["load_btn"].click()`. **The return tuple length must exactly match the outputs list length — Gradio raises a silent error if they differ.**
+
+4. **Restore on project create.** If `handle_create()` resets or populates this control, add it to `handle_create()`'s return tuple and `t1["create_btn"].click(outputs=[...])` in the same position as in `handle_load`.
+
+5. **Visibility side effects.** If loading a saved value should also change the visibility of other components (e.g. Z-Image sub-controls appearing when `firstframe_mode = "Z-Image First Frame"`), handle this explicitly in `handle_load`'s return tuple with `gr.update(visible=..., value=...)`. Gradio does **not** fire `.change()` events when `handle_load` sets a value programmatically.
+
+### Project-content fields — never globalise
+
+These keys live in `project/settings.json` only and must **never** be added to `GLOBALIZABLE_KEYS`:
+`rough_concept`, `plot`, `performance_desc`, `singer_gender`, `total_time_spent`, `scripted_total_dur`, `scripted_shot_count`, `style_overrides`, `custom_style_prompt`, `custom_style_negative`, `custom_director`, `zimage_vocal_first_frame_prompt`, `zimage_vocal_source_assembled`, `last_ffp_style`, `last_ffp_director`, `last_gen_mode`.
+
+---
+
 ## Key Domain Concepts
 
 - **Shot Types**: "Vocal" (singing/performance) and "Action" (narrative/visual). These control prompt generation strategy and audio attachment during video generation.

@@ -88,6 +88,8 @@ Set **First Frame Mode**:
 - *LTX-Native* — standard text-to-video generation
 - *Z-Image First Frame* — generates a still image first and uses it as the opening frame for each clip; improves character consistency at the cost of dynamic camera motion (see [Z-Image First Frame Mode](#z-image-first-frame-mode) below)
 
+All of these preferences — mode, versions, resolution, style, director, first-frame mode, Z-Image sub-settings, vocal prompt mode, and camera motion — are **saved per-project automatically** and restored when you reload the project.
+
 Click *Start Batch Generation* to begin. Use **⏸ Pause Queue** to pause between shots, **✖ Cancel All** to clear the remaining queue, or **⏹ Stop** to halt after the current shot finishes.
 
 **Vocal Shot Prompt Mode** controls which prompt drives video generation for Vocal shots:
@@ -97,6 +99,19 @@ Click *Start Batch Generation* to begin. Use **⏸ Pause Queue** to pause betwee
 ### Single Shot Generation
 
 Select a specific shot from the dropdown, optionally edit its prompt inline (changes save automatically), then click *Generate Additional Version* to add another version without deleting existing ones. Use the **Camera Motion** dropdown to apply a specific camera move (dolly, jib, handheld, etc.) to this shot only.
+
+### Full Prompt Text
+
+The **Full Prompt Text (character bibles + style + director injected)** accordion shows the exact prompt that will be sent to the video generation backend — the base Video Prompt with character bible descriptions injected at the first occurrence of each character name, wrapped in the selected style template, and the director credit appended.
+
+This field is **editable**. To override the assembled prompt for a specific shot:
+1. Edit the text directly in the field (useful for close-ups where you want to shorten bible descriptions, or any other per-shot tweak)
+2. Click **💾 Save Override** — the shot will now render with your text verbatim, bypassing character bible injection, style wrapping, and director credit
+3. To restore the normal assembled behaviour, click **🗑 Clear Override**
+
+**When an override is active:** the ⚡ indicator appears and the Clear Override button is shown. Style negative prompts still apply during generation (they suppress artefacts independently of the positive prompt).
+
+**Overrides are automatically cleared** when you edit the base Video Prompt for that shot or use *Regenerate AND Prompt*, since the assembled version would change and the override would be stale. Bulk concept regeneration also clears overrides for regenerated shots.
 
 ### Gallery & Controls
 
@@ -138,12 +153,40 @@ The bottom of Tab 4 shows a gallery of all assembled videos in the project's `re
 
 ## Tab 5 · Settings
 
-Configure the API endpoints used by the application:
+### Global API Settings
+
+Configure the endpoints used by the application:
 - **Video Generation Backend** — select **LTX Desktop** (default) or **Wan2GP** (see below). The URL field pre-fills with the default for the chosen backend.
 - **Video Backend API URL** — the base URL for the video generation backend (LTX Desktop default: `http://127.0.0.1:8000/api`; Wan2GP default: `http://127.0.0.1:7862/api`)
 - **LLM API URL** — the base URL for the local LLM backend. Supports **LM Studio** (default: `http://127.0.0.1:1234/v1`) and **llama.cpp** `llama-server.exe` (default: `http://127.0.0.1:8080/v1`). When using llama-server, start it with at least **32K context** (`--ctx-size 32768`) for projects with large shot lists.
 
-Click *Save Settings* to apply immediately and refresh the model list. Settings are stored globally in `global_settings.json` and persist across all projects and sessions.
+Click *Save Settings* to apply immediately and refresh the model list. These API settings are stored globally in `global_settings.json` and apply to all projects.
+
+### Two-Tier Settings Model
+
+Synesthesia separates settings into two layers:
+
+| Layer | File | What it holds |
+|-------|------|---------------|
+| **Global defaults** | `global_settings.json` | API URLs, cost/wattage, and any settings promoted with the button below |
+| **Project settings** | `projects/<name>/settings.json` | All Tab 2 content and template customisations, all Tab 3 generation preferences — saved automatically as you work |
+
+When a **new project is created**, its settings file is pre-populated from the current global defaults, so it inherits your preferred prompt templates and generation preferences automatically.
+
+When a **project is loaded**, all Tab 2 and Tab 3 controls are restored to exactly how you left them — including Z-Image settings, resolution, style, director, first-frame mode, versions per shot, and camera motion.
+
+### 📌 Make Current Project Settings Default
+
+This button promotes the loaded project's settings into `global_settings.json` so every new project starts with those values.
+
+**What gets promoted:**
+- All LLM prompt templates (plot, performance, concepts bulk, character bible, Z-image conversion)
+- Timeline defaults (silence detection, shot duration range, video mode)
+- Tab 3 generation preferences (first-frame mode, Z-Image sub-settings, vocal prompt mode, resolution, versions, camera motion, director, style)
+
+**What is never promoted** (these are project-specific by nature): story concept, plot, performance description, singer gender, scripted duration, style overrides, character bibles, Z-image cached prompts/images.
+
+Clicking the button does not overwrite your API URL, wattage, or backend settings.
 
 ---
 
@@ -287,14 +330,19 @@ If you prefer not to run a local LLM, you can use a cloud-based model (such as C
 ### Template (copy and paste this into your cloud LLM)
 
 ```
-Create a music video via AI video prompts for the following song. See the attached shot list with durations and frame counts. We need to tell a coherent story using the shots labeled "action" in the type column. Return TWO files:
+Create a music video via AI video prompts for the following song (see the bottom of this text for lyrics). See the attached shot list with durations and frame counts. We need to tell a coherent story using the shots labeled "action" in the type column.  In the vocal type rows, we cut to the singer and band.
+
+Return TWO files:
 
 1. The shot list CSV with each "Video_Prompt" field filled out.
-2. A separate character_bibles.csv file with two columns: "character_name" and "description". Include one row per recurring character who appears in the action shots. Each description should be a single dense paragraph covering the character's age, gender, ethnicity, hair colour and style, clothing, and any other distinguishing visual details — written so that an AI video model can reproduce the character's appearance consistently across multiple unrelated shots. Do not include the lead singer in the bibles; they are handled separately via the vocal shot description.
+
+2. A separate character_bibles.csv file with two columns: "character_name" and "description". Include one row per recurring character who appears in the action shots. Each description should be a single dense paragraph covering the character's age, gender, ethnicity, hair color and style, clothing, and any other distinguishing visual details — written so that an AI video model (LTX 2.3) can reproduce the character's appearance consistently across multiple unrelated shots. In the video prompt field for action shots, the characters name will automatically be followed by thier description from the character bible, so there is no need to describe the characters outside of their names.  Avoid using the same name more than once per video prompt.
+
+3. Do not include the lead singer in the character bibles; they are handled separately via the vocal shot type description.  
 
 The AI video prompt for the vocal shots should always be very similar to the following as we cut to the live performance. We need to focus on consistency and always being closeup so the lip-sync model has enough pixels to work with.
 
-"Handheld dynamic closeup shot of a [describe lead singer here] Dynamic camera movement with slight handheld shake, shallow depth of field, dramatic lighting, 85mm lens, 24fps, high contrast, band silhouettes, energetic atmosphere, cinematic color grading, [describe color palette here] [name of singer] is careful to enunciate each word to the camera to account for their deaf sister's lip reading."
+"Handheld extreme closeup shot of a [describe lead singer here] Dynamic camera movement with slight handheld shake, shallow depth of field, dramatic lighting, 85mm lens, 24fps, high contrast, band silhouettes, energetic atmosphere, cinematic color grading, [describe color palette here] [invent name of singer] is careful to enunciate each word to the camera to account for their deaf sister's lip reading."
 
 Follow the LTX prompt guide to create each "action" AI video model prompt:
 
@@ -309,9 +357,13 @@ Follow the LTX prompt guide to create each "action" AI video model prompt:
 - When describing camera movement, focus on the camera's relationship to the subject.
 - You should expect to write 4 to 8 descriptive sentences to cover all the key aspects of the prompt.
 
-Lead Singer's gender: [insert gender description here]
-Story Idea: [insert story idea here]
-Genre: [insert genre tags here]
-Lyrics: [insert lyrics here]
+Lead Singer's gender: 
+Story concept: 
+
+Song genre tags:
+  
+Title:
+
+Lyrics:
 ```
         """)

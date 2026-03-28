@@ -11,12 +11,28 @@ import pandas as pd
 from pydub import AudioSegment
 
 import config
-from models import sync_video_directory
+from models import LLMBridge, sync_video_directory
 
 # Global cache for ffprobe frame counts to speed up preview loading in Tab 3
 FRAME_COUNT_CACHE = {}
 
 _zimage_url_cache = None  # Cached after first successful discovery
+
+
+def convert_prompt_for_zimage(base_prompt, pm, settings=None):
+    """Convert a video prompt into a still-image first-frame prompt via LLM.
+
+    Uses the project's zimage_prompt_template setting (falls back to the default
+    template in config.py). Operates on the raw base_prompt before any style/director
+    assembly so the result can be stably cached in the CSV.
+    """
+    if settings is None:
+        settings = pm.load_project_settings()
+    template = settings.get("zimage_prompt_template", config.DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE)
+    llm_model = settings.get("llm_model", "qwen3-vl-8b-instruct-abliterated-v2.0")
+    llm = LLMBridge()
+    user_msg = template.replace("{prompt}", base_prompt)
+    return llm.query("", user_msg, llm_model)
 
 
 def resolve_style_data(style_name, pm):
@@ -70,7 +86,6 @@ def get_project_renders(pm):
     render_paths = []
     for f in files:
         fname = os.path.basename(f)
-        render_paths.append(f)
         try:
             thumb_path = os.path.join(renders_dir, f"thumb_{fname}.jpg")
             if not os.path.exists(thumb_path):
@@ -80,10 +95,10 @@ def get_project_renders(pm):
                 )
             if os.path.exists(thumb_path):
                 gallery_data.append((thumb_path, fname))
-            else:
-                gallery_data.append((None, fname))
+                render_paths.append(f)
+            # Skip renders whose thumbnail can't be generated yet (e.g. file still being written)
         except Exception:
-            gallery_data.append((None, fname))
+            pass  # Skip unreadable files rather than appending None to gallery
 
     return gallery_data, render_paths
 
@@ -243,43 +258,57 @@ def generate_zimage_first_frame(prompt, shot_id, pm):
     yield (local_path, None)
 
 
-def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, director=None, generation_mode="LTX-Native", camera_motion="none"):
+def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, director=None, generation_mode="LTX-Native", camera_motion="none", use_llm_image_prompt=False, caching_mode="Use cached prompt"):
+    reuse_first_frame = (caching_mode == "Use cached image")
+    skip_prompt_cache = (caching_mode == "Regenerate both on each render")
     row_idx = pm.df.index[pm.df['Shot_ID'].astype(str).str.upper() == str(shot_id).upper()].tolist()
     if not row_idx:
         yield None, "Error: Shot not found in timeline."
         return
 
     row = pm.df.loc[row_idx[0]]
-    vid_prompt_raw = row.get('Video_Prompt', '')
-    vid_prompt = "" if pd.isna(vid_prompt_raw) else str(vid_prompt_raw).strip()
 
-    if row.get('Type') == "Vocal" and vocal_mode == "Use Singer/Band Description":
-        settings = pm.load_project_settings()
-        perf_desc = settings.get("performance_desc", "")
-        if perf_desc:
-            vid_prompt = perf_desc
-
-    if not vid_prompt:
-        yield None, "Error: Missing Video Prompt."
-        return
-
-    # Inject character bible descriptions (first occurrence of each name only)
-    if pm.character_bibles:
-        vid_prompt = apply_character_bibles(vid_prompt, pm.character_bibles)
-
+    is_override = str(row.get('Prompt_Override', '')).strip().lower() == 'true'
     negative_prompt = config.DEFAULT_NEGATIVE_PROMPT
     style_data = resolve_style_data(style, pm)
     if style_data:
-        vid_prompt = style_data["prompt"].replace("{prompt}", vid_prompt)
         negative_prompt = config.DEFAULT_NEGATIVE_PROMPT + ", " + style_data["negative_prompt"]
 
-    if director and director != "None":
-        effective_director = director
-        if director == "Custom":
+    if is_override:
+        vid_prompt = str(row.get('Prompt_Override_Text', '')).strip()
+        if not vid_prompt:
+            yield None, f"Error: Override flag is set for {shot_id} but override text is empty."
+            return
+        print(f"⚡ Prompt override active for {shot_id}.")
+        print(f"🎬 Override Prompt:\n{vid_prompt}\n=================================\n")
+    else:
+        vid_prompt_raw = row.get('Video_Prompt', '')
+        vid_prompt = "" if pd.isna(vid_prompt_raw) else str(vid_prompt_raw).strip()
+
+        if row.get('Type') == "Vocal" and vocal_mode == "Use Singer/Band Description":
             settings = pm.load_project_settings()
-            effective_director = settings.get("custom_director", "")
-        if effective_director:
-            vid_prompt += f". This video was directed by {effective_director}."
+            perf_desc = settings.get("performance_desc", "")
+            if perf_desc:
+                vid_prompt = perf_desc
+
+        if not vid_prompt:
+            yield None, "Error: Missing Video Prompt."
+            return
+
+        # Inject character bible descriptions (first occurrence of each name only)
+        if pm.character_bibles:
+            vid_prompt = apply_character_bibles(vid_prompt, pm.character_bibles)
+
+        if style_data:
+            vid_prompt = style_data["prompt"].replace("{prompt}", vid_prompt)
+
+        if director and director != "None":
+            effective_director = director
+            if director == "Custom":
+                settings = pm.load_project_settings()
+                effective_director = settings.get("custom_director", "")
+            if effective_director:
+                vid_prompt += f". This video was directed by {effective_director}."
 
     print(f"\n🎬 === START VIDEO GENERATION (LTX) ===")
     print(f"🎬 Shot ID: {shot_id} | Type: {row['Type']}")
@@ -301,17 +330,86 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, dir
 
     # --- Z-Image first frame conditioning ---
     if generation_mode == "Z-Image First Frame":
-        print(f"🖼️ === GENERATING Z-IMAGE FIRST FRAME ===")
-        frame_path, frame_err = None, "Unknown"
-        for item in generate_zimage_first_frame(vid_prompt, shot_id, pm):
-            if isinstance(item, tuple):
-                frame_path, frame_err = item
+        zimage_prompt = vid_prompt  # default: use fully-assembled video prompt as-is
+
+        if use_llm_image_prompt:
+            settings_z = pm.load_project_settings()
+            # Check per-shot cache in CSV (skipped when caching mode is "Regenerate both")
+            cached_ffp = ""
+            if not skip_prompt_cache and "First_Frame_Prompt" in pm.df.columns:
+                _raw_cached = pm.df.loc[row_idx[0], "First_Frame_Prompt"]
+                if _raw_cached and not pd.isna(_raw_cached) and str(_raw_cached).strip():
+                    cached_ffp = str(_raw_cached).strip()
+            if cached_ffp:
+                zimage_prompt = cached_ffp
+                yield None, "♻️ Using cached first-frame image prompt..."
             else:
-                yield None, item
-        if frame_err:
-            yield None, f"Error: Z-Image failed: {frame_err}"
-            return
-        payload["imagePath"] = os.path.abspath(frame_path)
+                # For Vocal + "Use Singer/Band Description": use project-level cache
+                if row.get("Type") == "Vocal" and vocal_mode == "Use Singer/Band Description":
+                    if (not skip_prompt_cache
+                            and settings_z.get("zimage_vocal_source_assembled") == vid_prompt
+                            and settings_z.get("zimage_vocal_first_frame_prompt")):
+                        zimage_prompt = settings_z["zimage_vocal_first_frame_prompt"]
+                        yield None, "♻️ Using cached vocal first-frame image prompt..."
+                    else:
+                        yield None, "🧠 Converting vocal prompt to still image prompt via LLM..."
+                        zimage_prompt = convert_prompt_for_zimage(vid_prompt, pm, settings_z)
+                        if not skip_prompt_cache:
+                            pm.save_project_settings({
+                                "zimage_vocal_first_frame_prompt": zimage_prompt,
+                                "zimage_vocal_source_assembled": vid_prompt,
+                            })
+                else:
+                    # Convert fully-assembled vid_prompt (with styles, character bibles, director)
+                    # so the LLM sees the same prompt that LTX will use for video generation
+                    yield None, "🧠 Converting prompt to still image prompt via LLM..."
+                    zimage_prompt = convert_prompt_for_zimage(vid_prompt, pm, settings_z)
+                # Cache the converted prompt to CSV for reuse (skipped when caching mode is "Regenerate both")
+                if not skip_prompt_cache and "First_Frame_Prompt" in pm.df.columns:
+                    pm.df.at[row_idx[0], "First_Frame_Prompt"] = zimage_prompt
+                    pm.save_data()
+
+        # Signal the queue processor to update the First Frame Prompt textbox in the UI
+        pm._display_ffp = zimage_prompt
+
+        # --- Reuse cached first frame image if requested ---
+        _reused_frame = False
+        if reuse_first_frame and "First_Frame_Image_Path" in pm.df.columns:
+            _cached_rel = pm.df.loc[row_idx[0], "First_Frame_Image_Path"]
+            _cached_src = ""
+            if "First_Frame_Image_Source" in pm.df.columns:
+                _raw_src = pm.df.loc[row_idx[0], "First_Frame_Image_Source"]
+                _cached_src = "" if pd.isna(_raw_src) else str(_raw_src)
+            if _cached_rel and not pd.isna(_cached_rel) and str(_cached_rel).strip():
+                _project_root = os.path.join(pm.base_dir, pm.current_project)
+                _cached_abs = os.path.join(_project_root, str(_cached_rel).strip())
+                # Only reuse if the file exists AND it was generated from the same assembled prompt
+                if os.path.exists(_cached_abs) and _cached_src == zimage_prompt:
+                    yield None, "♻️ Reusing cached first frame image..."
+                    payload["imagePath"] = os.path.abspath(_cached_abs)
+                    _reused_frame = True
+
+        if not _reused_frame:
+            print(f"🖼️ === GENERATING Z-IMAGE FIRST FRAME ===")
+            print(f"🖼️ Z-Image prompt:\n{zimage_prompt}\n=================================\n")
+            frame_path, frame_err = None, "Unknown"
+            for item in generate_zimage_first_frame(zimage_prompt, shot_id, pm):
+                if isinstance(item, tuple):
+                    frame_path, frame_err = item
+                else:
+                    yield None, item
+            if frame_err:
+                yield None, f"Error: Z-Image failed: {frame_err}"
+                return
+            payload["imagePath"] = os.path.abspath(frame_path)
+            # Cache the image path and source prompt for future reuse if requested
+            if reuse_first_frame and "First_Frame_Image_Path" in pm.df.columns:
+                _project_root = os.path.join(pm.base_dir, pm.current_project)
+                _rel_path = os.path.relpath(frame_path, _project_root)
+                pm.df.at[row_idx[0], "First_Frame_Image_Path"] = _rel_path
+                if "First_Frame_Image_Source" in pm.df.columns:
+                    pm.df.at[row_idx[0], "First_Frame_Image_Source"] = zimage_prompt
+                pm.save_data()
 
     if row['Type'] == "Vocal":
         vocals_path = pm.get_asset_path_if_exists("vocals.mp3")

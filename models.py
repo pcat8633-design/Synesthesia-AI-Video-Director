@@ -132,6 +132,15 @@ class ProjectManager:
 
         with open(os.path.join(path, "lyrics.txt"), "w") as f:
             f.write("")
+
+        initial_settings = config.get_global_defaults()
+        settings_path = os.path.join(path, "settings.json")
+        try:
+            with open(settings_path, "w", encoding="utf-8") as f:
+                json.dump(initial_settings, f, indent=4)
+        except Exception:
+            pass
+
         return f"Project '{clean_name}' created."
 
     def load_project(self, name):

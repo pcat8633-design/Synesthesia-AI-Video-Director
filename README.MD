@@ -120,13 +120,19 @@ The **Mode** dropdown on Tab 2 controls how the shot timeline is built:
 
 ### Settings
 
-API endpoints are configured on Tab 5:
+Synesthesia uses a **two-tier settings model**:
+
+- **Global settings** (`global_settings.json`) — API endpoints, cost/wattage, and any settings you've promoted with the **📌 Make Current Project Settings Default** button. Applied to every new project on creation.
+- **Project settings** (`projects/<name>/settings.json`) — all Tab 2 and Tab 3 preferences specific to that project (prompt templates, timeline settings, generation preferences, etc.). Saved automatically as you make changes.
+
+**Tab 5 — Settings** controls:
 
 - **Video Generation Backend** — select **LTX Desktop** (default) or **Wan2GP**. The URL field pre-fills with the appropriate default when you change backends.
 - **Video Backend API URL** — base URL for the video generation backend (`http://127.0.0.1:8000/api` for LTX Desktop; `http://127.0.0.1:7862/api` for Wan2GP).
 - **LLM API URL** — base URL for the local LLM backend. Supports **LM Studio** (default: `http://127.0.0.1:1234/v1`) and **llama.cpp** `llama-server.exe` (default: `http://127.0.0.1:8080/v1`).
+- **📌 Make Current Project Settings Default** — promotes the loaded project's prompt templates, timeline defaults, and generation preferences into `global_settings.json` so that every new project you create starts with those values instead of the built-in defaults.
 
-Settings persist across projects in `global_settings.json`.
+**Tab 3 generation preferences** (resolution, first-frame mode, style, director, versions, camera motion, vocal prompt mode, and Z-Image sub-settings) are all saved per-project automatically and restored when you reload that project.
 
 ### Hotkey
 

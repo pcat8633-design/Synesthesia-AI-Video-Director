@@ -59,6 +59,8 @@ def build(pm_state, llm_dropdown):
         with gr.Row():
             save_settings_btn = gr.Button("💾 Save Settings", variant="primary")
             calibration_reset_btn = gr.Button("🔄 Reset Render Calibration", variant="secondary")
+        with gr.Row():
+            make_default_btn = gr.Button("📌 Make Current Project Settings Default", variant="secondary")
         settings_status = gr.Textbox(label="Status", interactive=False)
 
         with gr.Accordion("📊 Render Calibration Stats", open=False):
@@ -188,5 +190,17 @@ Pinokio sandboxes Wan2GP in its own Python environment — you must use Pinokio'
         config.get_calibration_summary,
         outputs=[calibration_stats_txt],
     )
+
+    def handle_make_default(pm):
+        if not pm or not pm.current_project:
+            return "❌ No project loaded. Load a project first."
+        project_settings = pm.load_project_settings()
+        to_save = {k: v for k, v in project_settings.items() if k in config.GLOBALIZABLE_KEYS}
+        if not to_save:
+            return "⚠️ No globalizable settings found in current project."
+        config.save_global_url_settings(to_save)
+        return f"✅ {len(to_save)} settings saved as global defaults."
+
+    make_default_btn.click(handle_make_default, inputs=[pm_state], outputs=[settings_status])
 
     return {"video_backend_drp": video_backend_drp}
