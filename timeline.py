@@ -85,11 +85,12 @@ def scan_vocals_advanced(vocals_file_path, project_name, min_silence, silence_th
         vocal_req_dur = voc_end - current_cursor
 
         while vocal_req_dur > 0:
-            if vocal_req_dur > 10.0:
-                chosen_int = 10
+            if vocal_req_dur > max_dur:
+                chosen_int = int(math.ceil(max_dur))
             else:
                 chosen_int = int(math.ceil(vocal_req_dur))
                 if chosen_int < 1: chosen_int = 1
+            if chosen_int > 10: chosen_int = 10
 
             actual_dur = get_ltx_duration(chosen_int, fps)
 

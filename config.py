@@ -7,6 +7,7 @@ import glob
 # CONFIGURATION
 # ==========================================
 LTX_BASE_URL = "http://127.0.0.1:8000/api"
+LTX_AUTH_TOKEN: str = ""  # Bearer token for LTX Desktop auth; empty = no auth (vanilla LTX)
 LM_STUDIO_URL = "http://127.0.0.1:1234/v1"
 VIDEO_BACKEND = "LTX Desktop"  # "LTX Desktop" | "Wan2GP"
 ELECTRICITY_COST = 0.1805  # USD per kWh (default 18.05¢)
@@ -467,7 +468,7 @@ GLOBALIZABLE_KEYS = frozenset({
     "min_silence", "silence_thresh", "shot_mode", "min_dur", "max_dur", "video_mode",
     # Video generation preferences
     "firstframe_mode", "llm_image_prompt_mode", "first_frame_reuse_mode",
-    "vocal_prompt_mode", "last_resolution", "last_versions",
+    "vocal_prompt_mode", "vocal_chain_mode", "last_resolution", "last_versions",
     "last_camera_motion", "last_director", "last_style",
 })
 
@@ -497,6 +498,7 @@ _CODE_DEFAULTS = {
     "llm_image_prompt_mode": "Use video prompt as-is",
     "first_frame_reuse_mode": "Use cached prompt",
     "vocal_prompt_mode": "Use Singer/Band Description",
+    "vocal_chain_mode": False,
     "last_resolution": "1080p",
     "last_versions": 1,
     "last_camera_motion": "none",
@@ -531,12 +533,13 @@ def save_global_llm(model_id):
         pass
 
 def load_global_url_settings():
-    global LTX_BASE_URL, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
+    global LTX_BASE_URL, LTX_AUTH_TOKEN, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
     try:
         if os.path.exists(GLOBAL_SETTINGS_FILE):
             with open(GLOBAL_SETTINGS_FILE, "r") as f:
                 data = json.load(f)
                 LTX_BASE_URL = data.get("ltx_base_url", LTX_BASE_URL)
+                LTX_AUTH_TOKEN = data.get("ltx_auth_token", LTX_AUTH_TOKEN)
                 LM_STUDIO_URL = data.get("lm_studio_url", LM_STUDIO_URL)
                 VIDEO_BACKEND = data.get("video_backend", VIDEO_BACKEND)
                 ELECTRICITY_COST = float(data.get("electricity_cost", ELECTRICITY_COST))
@@ -547,8 +550,9 @@ def load_global_url_settings():
 
 def save_global_url_settings(settings: dict):
     """Accept a settings dict and persist all global settings to disk."""
-    global LTX_BASE_URL, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
+    global LTX_BASE_URL, LTX_AUTH_TOKEN, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
     LTX_BASE_URL = str(settings.get("ltx_base_url", LTX_BASE_URL)).strip()
+    LTX_AUTH_TOKEN = str(settings.get("ltx_auth_token", LTX_AUTH_TOKEN)).strip()
     LM_STUDIO_URL = str(settings.get("lm_studio_url", LM_STUDIO_URL)).strip()
     VIDEO_BACKEND = settings.get("video_backend", VIDEO_BACKEND)
     ELECTRICITY_COST = float(settings.get("electricity_cost", ELECTRICITY_COST))
@@ -562,6 +566,7 @@ def save_global_url_settings(settings: dict):
                 data = json.load(f)
         data.update({
             "ltx_base_url": LTX_BASE_URL,
+            "ltx_auth_token": LTX_AUTH_TOKEN,
             "lm_studio_url": LM_STUDIO_URL,
             "video_backend": VIDEO_BACKEND,
             "electricity_cost": ELECTRICITY_COST,

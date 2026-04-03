@@ -100,6 +100,52 @@ Click *Start Batch Generation* to begin. Use **⏸ Pause Queue** to pause betwee
 
 Select a specific shot from the dropdown, optionally edit its prompt inline (changes save automatically), then click *Generate Additional Version* to add another version without deleting existing ones. Use the **Camera Motion** dropdown to apply a specific camera move (dolly, jib, handheld, etc.) to this shot only.
 
+**Generate Additional Version fully supports vocal chain mode** — if the chain checkbox is ticked, it uses the same look-ahead conditioning logic as batch generation.
+
+### Vocal Shot Chaining
+
+**Chain consecutive vocal shots** is a checkbox in Tab 3 that links consecutive Vocal shots together for seamless visual continuity. When enabled, each Vocal shot's generation is conditioned on a *look-ahead frame* taken from the preceding shot, so the cut between them flows as natural motion rather than a jump.
+
+#### How it works
+
+LTX Desktop conditions the first frame of a clip on an `imagePath` input. If the last frame of shot N is passed directly as the first frame of shot N+1, the result is a near-duplicate frame at the cut — a brief visual freeze at 24fps. The chaining system avoids this by:
+
+1. Generating shot N **one second longer** than its timeline duration (a 4s shot becomes 5s)
+2. Extracting the frame **one frame past** the intended end of the shot as a *look-ahead chain frame*, saved to `first_frames/{shot_id}_chain_out.jpg`
+3. Conditioning shot N+1 on that frame — so N+1 starts from where N *would have continued*, not where it stopped
+4. Assembly automatically trims shot N back to its original duration — the extra second is never included in the final video
+
+#### Resolution downgrade for max-duration shots
+
+LTX Desktop has per-resolution duration limits. When a shot is already at its limit, the extra second can't be generated at the same resolution. Synesthesia automatically downgrades to the next tier:
+
+| Original resolution | Shot duration | Extended at |
+|---|---|---|
+| 1080p | 5s (max) | 720p → 6s |
+| 720p | 10s (max) | 540p → 11s |
+| 540p | 20s (max) | No downgrade possible — falls back to old method |
+
+When a downgrade occurs, you'll see a **⬇️ Downgrading to…** status message. The shot's timeline duration in the CSV is unchanged; only the generation payload is affected. Assembly resizes all clips to match the project's target resolution, so the downgraded clip is scaled up automatically.
+
+> **Note:** The extended clip is generated at the lower resolution — the first 5 seconds (the actual shot) will be at 720p rather than 1080p when a 1080p 5s shot is chain-extended. If pixel-perfect 1080p is critical for that shot, disable chaining or render it separately without chain mode.
+
+#### Stale chain frame warning
+
+If you **re-render shot N** (the preceding shot) after its successor N+1 is already rendered, shot N gets a new look-ahead frame. Synesthesia will display:
+
+> ⚠️ Shot V002 is already rendered — re-render it to apply the new chain frame.
+
+This means N+1's first frame was conditioned on the *old* version of shot N. Re-rendering N+1 with chain mode will pick up the new chain frame automatically.
+
+The chain frame staleness is also detected automatically: if `chain_out.jpg` is older than the predecessor's video file (i.e. the shot was re-rendered without chain mode), Synesthesia falls back to the old extract-last-frame method rather than using the stale look-ahead.
+
+#### Workflow tips
+
+- Render shots in **timeline order** for the cleanest results — each shot generates its look-ahead frame for the next
+- The **first shot in any chain** does not receive a chain frame (there is no predecessor), but it still generates one for the shot that follows
+- If chain mode is off when you render a shot, its `chain_out.jpg` is not updated — the next time you render its successor with chain mode on, the stale check will catch this and fall back gracefully
+- Works with both **batch generation** and **Generate Additional Version**
+
 ### Full Prompt Text
 
 The **Full Prompt Text (character bibles + style + director injected)** accordion shows the exact prompt that will be sent to the video generation backend — the base Video Prompt with character bible descriptions injected at the first occurrence of each character name, wrapped in the selected style template, and the director credit appended.

@@ -1,56 +1,8 @@
-Come up with a plan for the following:
+Develop a plan for the following:
 
+Check how resolution downgrades are currently being handled.  Looks like 5-second shots are being incorrectly down-graded to 720p (probably a rounding error).
 
- 1. Visual indicator for "Regenerate both" mode: When caching mode is "Regenerate both", show a small gr.Markdown
- notice like "⚡ Both prompt and image will be regenerated fresh on every render." near the dropdown to help the user
- understand the performance cost upfront.
- 2. Persist caching mode in project settings: Currently caching mode lives only in the Gradio session. If the user
- reopens the project, the dropdown resets to the default. Saving it to global_settings.json (or per-project settings)
- would let it persist across app restarts.
- 3. Disable "Clear Cached Frame" button when mode is "Regenerate both": Since no image is ever cached in that mode,
- graying out the button (interactive=False) would avoid the "Nothing to clear" info message. Can be wired to
- first_frame_reuse_dropdown.change.
+Also, we need to take another look at "vocal Chain last frame" on tab 3.  This should be separated out from first frame mode so the user can still choose LTX-native plus "Chain last frame" OR Z-image first frame plus "Chain last frame."  In these instances obviously only the first frame of the series of vocal shots would be effected by the selection of Z vs LTX and the remainder in that series would get the last frame of the previous shot.   
 
-
-Also, provide any gotcha's or additional ideas you can think of about this addition.
-
-
-
- 1. JIT skip only checks file existence, not source validity
-
- If the cached image is stale (style changed after it was generated), JIT skips but generate_video_for_shot will
- regenerate synchronously. This is a no-worse path — before JIT existed, all prompt conversion was synchronous. The
- only lost optimization is the pre-conversion for the stale case.
-
- 2. Status indicator cannot detect style-induced staleness
-
- first_frame_img_status shows "✅ Cached" based on file existence alone. If the user changes style/director AFTER
- generating a cached image, the indicator still shows "✅ Cached" even though the image will be regenerated at render
- time. This is intentional — computing the full assembled prompt server-side on every style dropdown change is
- expensive and not worth the accuracy. The "Clear Cached Frame" button gives the user manual control for this case.
-
- 3. get_first_frame_img_status needs to be updated after render completes
-
- The queue processor finishes a shot by updating various outputs. If a new image was just cached (reuse mode + fresh
- generation), the status should update to show "✅ Cached". Add first_frame_img_status as an output to the
- process_render_queue_if_idle yield tuples — OR simply re-fire get_first_frame_img_status via the .then() chain after
- the queue idle event. The simpler option: add it as the 14th element of the yield tuples.
-
- Decision: Keep this simple — the status naturally refreshes the next time the user switches shots. Wiring render
- output is scope creep; skip it.
-
- 4. first_frame_img_status visibility in non-Z-Image mode
-
- The first_frame_prompt_row (which contains the indicator) is already hidden when not in Z-Image mode. The indicator
- inside it doesn't need independent hiding from toggle_zimage_controls — it's hidden transitively. HOWEVER, if
- toggle_zimage_controls uses gr.update(visible=False) on the row, the indicator's state is preserved (hidden within a
- hidden row). On switch back to Z-Image mode, fire get_first_frame_img_status in the mode change .then() to refresh it.
-
- 5. pd.isna import in get_first_frame_img_status
-
- pd is already imported at the top of tab3_video.py — no new import needed.
-
- 6. clear_first_frame_img_btn needs to be in toggle_zimage_controls scope
-
-
+Also think about any gotcha's or inconsistencies with this plan and develop fixes before we start.
 

@@ -94,7 +94,7 @@ REM ============================================================
 tasklist /FI "IMAGENAME eq LTX Desktop.exe" 2>NUL | find /I "LTX Desktop.exe" >NUL 2>NUL
 if errorlevel 1 (
     if exist "%LTX_DESKTOP_PATH%" (
-        powershell -Command "Start-Process '%LTX_DESKTOP_PATH%'"
+        start "" "%LTX_DESKTOP_PATH%"
     )
 )
 

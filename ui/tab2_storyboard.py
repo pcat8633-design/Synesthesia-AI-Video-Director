@@ -59,48 +59,6 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
             gen_plot_btn = gr.Button("2. Generate Overarching Plot")
             plot_out = gr.Textbox(label="Overarching Plot (Optional)", lines=4, interactive=True)
 
-            with gr.Accordion("Advanced: LLM Prompt Templates", open=False):
-                gr.Markdown("Customize the prompts sent to the local LLM for each generation step. "
-                            "Templates use `{placeholder}` syntax for dynamic values.")
-                reset_templates_btn = gr.Button("Reset All Templates to Defaults")
-
-                with gr.Accordion("Plot Generation Template", open=False):
-                    plot_sys_prompt_in = gr.Textbox(value=config.DEFAULT_PLOT_SYSTEM_PROMPT_MUSIC, label="System Prompt (Music Video Mode)", lines=2)
-                    plot_user_template_in = gr.Textbox(value=config.DEFAULT_PLOT_USER_TEMPLATE_MUSIC, label="User Prompt Template (Music Video Mode)", lines=4)
-                    gr.Markdown("*Placeholders: `{concept}`, `{lyrics}`, `{timeline}`*")
-                    plot_sys_prompt_scripted_in = gr.Textbox(value=config.DEFAULT_PLOT_SYSTEM_PROMPT_SCRIPTED, label="System Prompt (Scripted Mode)", lines=2)
-                    plot_user_template_scripted_in = gr.Textbox(value=config.DEFAULT_PLOT_USER_TEMPLATE_SCRIPTED, label="User Prompt Template (Scripted Mode)", lines=4)
-                    gr.Markdown("*Placeholders: `{concept}`, `{timeline}`*")
-
-                with gr.Accordion("Performance Description Template", open=False):
-                    perf_sys_prompt_in = gr.Textbox(value=config.DEFAULT_PERF_SYSTEM_PROMPT_MUSIC, label="System Prompt (Music Video Mode)", lines=2)
-                    perf_user_template_in = gr.Textbox(value=config.DEFAULT_PERF_USER_TEMPLATE_MUSIC, label="User Prompt Template (Music Video Mode)", lines=4)
-                    gr.Markdown("*Placeholders: `{concept}`, `{plot}`, `{gender_instruction}`*")
-                    perf_sys_prompt_scripted_in = gr.Textbox(value=config.DEFAULT_PERF_SYSTEM_PROMPT_SCRIPTED, label="System Prompt (Scripted Mode)", lines=2)
-                    perf_user_template_scripted_in = gr.Textbox(value=config.DEFAULT_PERF_USER_TEMPLATE_SCRIPTED, label="User Prompt Template (Scripted Mode)", lines=4)
-                    gr.Markdown("*Placeholders: `{concept}`, `{plot}`, `{gender_instruction}`*")
-
-                with gr.Accordion("Video Prompt Generation Template (Bulk)", open=False):
-                    concepts_bulk_template_in = gr.Textbox(value=config.BULK_PROMPT_TEMPLATE, label="Intercut / All Action Template", lines=6)
-                    gr.Markdown("*Placeholders: `{lyrics}`, `{plot}`, `{shot_list}`*")
-                    concepts_vocals_template_in = gr.Textbox(value=config.ALL_VOCALS_PROMPT_TEMPLATE, label="All Vocals Template", lines=6)
-                    gr.Markdown("*Placeholders: `{lyrics}`, `{plot}`, `{performance_desc}`, `{shot_list}`*")
-                    concepts_scripted_template_in = gr.Textbox(value=config.SCRIPTED_PROMPT_TEMPLATE, label="Scripted Template", lines=6)
-                    gr.Markdown("*Placeholders: `{gender}`, `{character_desc}`, `{concept}`, `{shot_list}`*")
-
-                with gr.Accordion("Character Bible Template", open=False):
-                    bible_sys_prompt_in = gr.Textbox(value=config.CHARACTER_BIBLE_SYSTEM_PROMPT, label="System Prompt", lines=2)
-                    bible_user_template_in = gr.Textbox(value=config.CHARACTER_BIBLE_USER_TEMPLATE, label="User Prompt Template", lines=8)
-                    gr.Markdown("*Placeholders: `{shot_prompts}`*")
-
-                with gr.Accordion("Single Shot Regeneration Template (Used in Tab 3)", open=False):
-                    prompt_template_in = gr.Textbox(value=config.DEFAULT_CONCEPT_PROMPT, label="Single Shot Prompt Template", lines=4)
-                    gr.Markdown("*Placeholders: `{plot}`, `{prev_shot}`, `{start}`, `{duration}`, `{type}`*")
-
-                with gr.Accordion("Z-Image First Frame Prompt Conversion (Used in Tab 3)", open=False):
-                    zimage_template_in = gr.Textbox(value=config.DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE, label="Z-Image Prompt Conversion Template", lines=3)
-                    gr.Markdown("*Placeholder: `{prompt}` — the video prompt to be converted to a still-image prompt.*")
-
             with gr.Row():
                 gen_concepts_btn = gr.Button("3. Generate Video Prompts (Bulk Generation)", variant="primary")
                 stop_concepts_btn = gr.Button("Stop Generation", variant="stop")
@@ -153,36 +111,20 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
 
     # --- Tab 2 Internal Events ---
 
-    t2_inputs = [current_proj_var, min_silence_sl, silence_thresh_sl, shot_mode_drp, min_shot_dur, max_shot_dur, llm_dropdown, rough_concept_in, plot_out, prompt_template_in, performance_desc_in, video_mode_drp, scripted_total_dur, scripted_shot_count, pm_state,
-                 plot_sys_prompt_in, plot_user_template_in, plot_sys_prompt_scripted_in, plot_user_template_scripted_in,
-                 perf_sys_prompt_in, perf_user_template_in, perf_sys_prompt_scripted_in, perf_user_template_scripted_in,
-                 concepts_bulk_template_in, concepts_vocals_template_in, concepts_scripted_template_in,
-                 bible_sys_prompt_in, bible_user_template_in, zimage_template_in,
+    t2_inputs = [current_proj_var, min_silence_sl, silence_thresh_sl, shot_mode_drp, min_shot_dur, max_shot_dur, llm_dropdown, rough_concept_in, plot_out, performance_desc_in, video_mode_drp, scripted_total_dur, scripted_shot_count, pm_state,
                  singer_gender_in, ffp_style_dropdown, ffp_director_dropdown]
 
-    def auto_save_tab2(proj_name, min_sil, sil_thresh, mode, min_d, max_d, llm, concept, plot, template, performance_d, video_mode, s_total_dur, s_shot_count, pm,
-                       p_sys_m, p_user_m, p_sys_s, p_user_s,
-                       pf_sys_m, pf_user_m, pf_sys_s, pf_user_s,
-                       c_bulk, c_vocals, c_scripted,
-                       b_sys, b_user, zi_template,
+    def auto_save_tab2(proj_name, min_sil, sil_thresh, mode, min_d, max_d, llm, concept, plot, performance_d, video_mode, s_total_dur, s_shot_count, pm,
                        singer_gender, ffp_style, ffp_director):
         if proj_name:
             pm.current_project = proj_name
             settings = {
                 "min_silence": min_sil, "silence_thresh": sil_thresh, "shot_mode": mode,
                 "min_dur": min_d, "max_dur": max_d, "llm_model": llm,
-                "rough_concept": concept, "plot": plot, "prompt_template": template,
+                "rough_concept": concept, "plot": plot,
                 "performance_desc": performance_d,
                 "video_mode": video_mode,
                 "scripted_total_dur": s_total_dur, "scripted_shot_count": s_shot_count,
-                "plot_sys_prompt_music": p_sys_m, "plot_user_template_music": p_user_m,
-                "plot_sys_prompt_scripted": p_sys_s, "plot_user_template_scripted": p_user_s,
-                "perf_sys_prompt_music": pf_sys_m, "perf_user_template_music": pf_user_m,
-                "perf_sys_prompt_scripted": pf_sys_s, "perf_user_template_scripted": pf_user_s,
-                "concepts_bulk_template": c_bulk, "concepts_vocals_template": c_vocals,
-                "concepts_scripted_template": c_scripted,
-                "bible_sys_prompt": b_sys, "bible_user_template": b_user,
-                "zimage_prompt_template": zi_template,
                 "singer_gender": singer_gender,
                 "last_ffp_style": ffp_style,
                 "last_ffp_director": ffp_director,
@@ -193,34 +135,8 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
                       ffp_style_dropdown, ffp_director_dropdown]:
         tab2_comp.change(auto_save_tab2, inputs=t2_inputs)
 
-    for tab2_text_comp in [rough_concept_in, plot_out, prompt_template_in, performance_desc_in,
-                           plot_sys_prompt_in, plot_user_template_in, plot_sys_prompt_scripted_in, plot_user_template_scripted_in,
-                           perf_sys_prompt_in, perf_user_template_in, perf_sys_prompt_scripted_in, perf_user_template_scripted_in,
-                           concepts_bulk_template_in, concepts_vocals_template_in, concepts_scripted_template_in,
-                           bible_sys_prompt_in, bible_user_template_in, zimage_template_in, singer_gender_in]:
+    for tab2_text_comp in [rough_concept_in, plot_out, performance_desc_in, singer_gender_in]:
         tab2_text_comp.blur(auto_save_tab2, inputs=t2_inputs)
-
-    def reset_templates():
-        return (
-            config.DEFAULT_PLOT_SYSTEM_PROMPT_MUSIC, config.DEFAULT_PLOT_USER_TEMPLATE_MUSIC,
-            config.DEFAULT_PLOT_SYSTEM_PROMPT_SCRIPTED, config.DEFAULT_PLOT_USER_TEMPLATE_SCRIPTED,
-            config.DEFAULT_PERF_SYSTEM_PROMPT_MUSIC, config.DEFAULT_PERF_USER_TEMPLATE_MUSIC,
-            config.DEFAULT_PERF_SYSTEM_PROMPT_SCRIPTED, config.DEFAULT_PERF_USER_TEMPLATE_SCRIPTED,
-            config.BULK_PROMPT_TEMPLATE, config.ALL_VOCALS_PROMPT_TEMPLATE, config.SCRIPTED_PROMPT_TEMPLATE,
-            config.CHARACTER_BIBLE_SYSTEM_PROMPT, config.CHARACTER_BIBLE_USER_TEMPLATE,
-            config.DEFAULT_CONCEPT_PROMPT,
-            config.DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE,
-        )
-    reset_templates_btn.click(reset_templates, outputs=[
-        plot_sys_prompt_in, plot_user_template_in,
-        plot_sys_prompt_scripted_in, plot_user_template_scripted_in,
-        perf_sys_prompt_in, perf_user_template_in,
-        perf_sys_prompt_scripted_in, perf_user_template_scripted_in,
-        concepts_bulk_template_in, concepts_vocals_template_in, concepts_scripted_template_in,
-        bible_sys_prompt_in, bible_user_template_in,
-        prompt_template_in,
-        zimage_template_in,
-    ])
 
     def on_mode_change(mode):
         is_scripted = (mode == "Scripted")
@@ -306,36 +222,7 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
 
     refresh_llm_btn.click(lambda: gr.update(choices=LLMBridge().get_models()), outputs=llm_dropdown)
 
-    gen_performance_btn.click(generate_performance_description, inputs=[rough_concept_in, plot_out, singer_gender_in, llm_dropdown, video_mode_drp, perf_sys_prompt_in, perf_user_template_in, perf_sys_prompt_scripted_in, perf_user_template_scripted_in], outputs=performance_desc_in)
-    gen_plot_btn.click(generate_overarching_plot, inputs=[rough_concept_in, lyrics_in, llm_dropdown, pm_state, video_mode_drp, plot_sys_prompt_in, plot_user_template_in, plot_sys_prompt_scripted_in, plot_user_template_scripted_in], outputs=plot_out)
-
-    gen_concepts_btn.click(
-        generate_concepts_logic,
-        inputs=[plot_out, llm_dropdown, rough_concept_in, performance_desc_in, pm_state,
-                video_mode_drp, singer_gender_in, concepts_bulk_template_in,
-                concepts_vocals_template_in, concepts_scripted_template_in],
-        outputs=[shot_table, concept_gen_status]
-    ).then(
-        generate_character_bibles_logic,
-        inputs=[pm_state, llm_dropdown, video_mode_drp, bible_sys_prompt_in, bible_user_template_in],
-        outputs=[bible_status, bible_table, shot_table]
-    )
     stop_concepts_btn.click(stop_gen, inputs=[pm_state], outputs=[concept_gen_status])
-
-    gen_firstframe_prompts_btn.click(
-        lambda: gr.update(visible=True),
-        outputs=[gen_firstframe_status]
-    ).then(
-        generate_all_firstframe_prompts_logic,
-        inputs=[pm_state, llm_dropdown, zimage_template_in, ffp_style_dropdown, ffp_director_dropdown],
-        outputs=[gen_firstframe_status]
-    )
-
-    gen_bible_btn.click(
-        generate_character_bibles_logic,
-        inputs=[pm_state, llm_dropdown, video_mode_drp, bible_sys_prompt_in, bible_user_template_in],
-        outputs=[bible_status, bible_table, shot_table]
-    )
 
     def save_bible_edits(new_df, pm):
         if pm.current_project and new_df is not None:
@@ -388,7 +275,6 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
         "max_shot_dur": max_shot_dur,
         "rough_concept_in": rough_concept_in,
         "plot_out": plot_out,
-        "prompt_template_in": prompt_template_in,
         "performance_desc_in": performance_desc_in,
         "scripted_total_dur": scripted_total_dur,
         "scripted_shot_count": scripted_shot_count,
@@ -396,22 +282,89 @@ def build(pm_state, current_proj_var, shared_shot_state, vocals_up, lyrics_in):
         "scan_btn": scan_btn,
         "singer_gender_in": singer_gender_in,
         "gen_performance_btn": gen_performance_btn,
-        "plot_sys_prompt_in": plot_sys_prompt_in,
-        "plot_user_template_in": plot_user_template_in,
-        "plot_sys_prompt_scripted_in": plot_sys_prompt_scripted_in,
-        "plot_user_template_scripted_in": plot_user_template_scripted_in,
-        "perf_sys_prompt_in": perf_sys_prompt_in,
-        "perf_user_template_in": perf_user_template_in,
-        "perf_sys_prompt_scripted_in": perf_sys_prompt_scripted_in,
-        "perf_user_template_scripted_in": perf_user_template_scripted_in,
-        "concepts_bulk_template_in": concepts_bulk_template_in,
-        "concepts_vocals_template_in": concepts_vocals_template_in,
-        "concepts_scripted_template_in": concepts_scripted_template_in,
-        "bible_sys_prompt_in": bible_sys_prompt_in,
-        "bible_user_template_in": bible_user_template_in,
+        "gen_plot_btn": gen_plot_btn,
+        "gen_concepts_btn": gen_concepts_btn,
+        "gen_firstframe_prompts_btn": gen_firstframe_prompts_btn,
+        "gen_bible_btn": gen_bible_btn,
+        "concept_gen_status": concept_gen_status,
+        "gen_firstframe_status": gen_firstframe_status,
         "bible_table": bible_table,
-        "zimage_template_in": zimage_template_in,
         "bible_status": bible_status,
         "ffp_style_dropdown": ffp_style_dropdown,
         "ffp_director_dropdown": ffp_director_dropdown,
     }
+
+
+def wire_template_events(t2, t5, pm_state, vocals_up, lyrics_in):
+    """Wire Tab 2 generation button events that depend on template components from Tab 5.
+    Must be called from app.py after both tab2 and tab5 have been built."""
+    gen_performance_btn = t2["gen_performance_btn"]
+    gen_plot_btn = t2["gen_plot_btn"]
+    gen_concepts_btn = t2["gen_concepts_btn"]
+    gen_firstframe_prompts_btn = t2["gen_firstframe_prompts_btn"]
+    gen_bible_btn = t2["gen_bible_btn"]
+    concept_gen_status = t2["concept_gen_status"]
+    gen_firstframe_status = t2["gen_firstframe_status"]
+    bible_status = t2["bible_status"]
+    bible_table = t2["bible_table"]
+    shot_table = t2["shot_table"]
+    rough_concept_in = t2["rough_concept_in"]
+    plot_out = t2["plot_out"]
+    performance_desc_in = t2["performance_desc_in"]
+    singer_gender_in = t2["singer_gender_in"]
+    llm_dropdown = t2["llm_dropdown"]
+    video_mode_drp = t2["video_mode_drp"]
+    ffp_style_dropdown = t2["ffp_style_dropdown"]
+    ffp_director_dropdown = t2["ffp_director_dropdown"]
+
+    plot_sys_prompt_in = t5["plot_sys_prompt_in"]
+    plot_user_template_in = t5["plot_user_template_in"]
+    plot_sys_prompt_scripted_in = t5["plot_sys_prompt_scripted_in"]
+    plot_user_template_scripted_in = t5["plot_user_template_scripted_in"]
+    perf_sys_prompt_in = t5["perf_sys_prompt_in"]
+    perf_user_template_in = t5["perf_user_template_in"]
+    perf_sys_prompt_scripted_in = t5["perf_sys_prompt_scripted_in"]
+    perf_user_template_scripted_in = t5["perf_user_template_scripted_in"]
+    concepts_bulk_template_in = t5["concepts_bulk_template_in"]
+    concepts_vocals_template_in = t5["concepts_vocals_template_in"]
+    concepts_scripted_template_in = t5["concepts_scripted_template_in"]
+    bible_sys_prompt_in = t5["bible_sys_prompt_in"]
+    bible_user_template_in = t5["bible_user_template_in"]
+    zimage_template_in = t5["zimage_template_in"]
+
+    gen_performance_btn.click(
+        generate_performance_description,
+        inputs=[rough_concept_in, plot_out, singer_gender_in, llm_dropdown, video_mode_drp,
+                perf_sys_prompt_in, perf_user_template_in, perf_sys_prompt_scripted_in, perf_user_template_scripted_in],
+        outputs=performance_desc_in
+    )
+    gen_plot_btn.click(
+        generate_overarching_plot,
+        inputs=[rough_concept_in, lyrics_in, llm_dropdown, pm_state, video_mode_drp,
+                plot_sys_prompt_in, plot_user_template_in, plot_sys_prompt_scripted_in, plot_user_template_scripted_in],
+        outputs=plot_out
+    )
+    gen_concepts_btn.click(
+        generate_concepts_logic,
+        inputs=[plot_out, llm_dropdown, rough_concept_in, performance_desc_in, pm_state,
+                video_mode_drp, singer_gender_in, concepts_bulk_template_in,
+                concepts_vocals_template_in, concepts_scripted_template_in],
+        outputs=[shot_table, concept_gen_status]
+    ).then(
+        generate_character_bibles_logic,
+        inputs=[pm_state, llm_dropdown, video_mode_drp, bible_sys_prompt_in, bible_user_template_in],
+        outputs=[bible_status, bible_table, shot_table]
+    )
+    gen_firstframe_prompts_btn.click(
+        lambda: gr.update(visible=True),
+        outputs=[gen_firstframe_status]
+    ).then(
+        generate_all_firstframe_prompts_logic,
+        inputs=[pm_state, llm_dropdown, zimage_template_in, ffp_style_dropdown, ffp_director_dropdown],
+        outputs=[gen_firstframe_status]
+    )
+    gen_bible_btn.click(
+        generate_character_bibles_logic,
+        inputs=[pm_state, llm_dropdown, video_mode_drp, bible_sys_prompt_in, bible_user_template_in],
+        outputs=[bible_status, bible_table, shot_table]
+    )

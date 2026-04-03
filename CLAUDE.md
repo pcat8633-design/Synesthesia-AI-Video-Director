@@ -72,9 +72,11 @@ These keys live in `project/settings.json` only and must **never** be added to `
 ## Key Domain Concepts
 
 - **Shot Types**: "Vocal" (singing/performance) and "Action" (narrative/visual). These control prompt generation strategy and audio attachment during video generation.
-- **LTX duration snapping**: Shot durations are locked to 1-5 second increments at 24 fps for specific compatibility with the LTX Desktop application.  Other versions of LTX do not have this limitation.
+- **LTX duration snapping**: Shot durations are locked to whole-second increments at 24 fps (LTX generates `D*24+1` frames for a D-second clip, e.g. 4s = 97 frames). Maximum duration is 10s; 1080p is further capped at 5s. Shots over 5s are automatically downgraded to 720p by `_effective_resolution()` in `ui/tab3_video.py`.
+- **Per-resolution duration limits**: 1080p max 5s, 720p max 10s, 540p max 20s (user-verified on LTX Desktop — the code's `get_ltx_frame_count()` cap of 10s only governs timeline planning utilities, not the API payload).
 - **Intercut mode**: Default mode that scans vocal audio for silence gaps to create alternating Vocal/Action shots.
 - **Z-Image First Frame mode**: Before generating a video, sends the video prompt to LTX's image endpoint to produce a 1920×1080 first-frame image, then passes it as `imagePath` conditioning into the video generation call. First frames are saved to `first_frames/` and never reused.
+- **Vocal chain mode** (`vocal_chain_mode` flag in `generate_video_for_shot()`): Chains consecutive Vocal shots for seamless visual continuity. For each Vocal shot N that precedes another Vocal shot N+1, the system generates shot N **one second longer** than its CSV duration, extracts the frame at `original_dur + 1/24` seconds (the first frame past the intended end) and saves it as `first_frames/{shot_id}_chain_out.jpg`. Shot N+1 is conditioned on this look-ahead frame via `imagePath`, avoiding a duplicate first frame at the cut. Assembly trims shot N to its original duration automatically via `subclip(0, snapped_dur)`. If shot N is at its resolution's max duration, `_get_chain_extension_resolution()` downgrades to the next resolution tier (1080p→720p, 720p→540p) so the extension can proceed. The `chain_out.jpg` freshness is validated by mtime comparison before use — if it is older than the predecessor's video, Synesthesia falls back to `extract_last_frame()`.
 
 ## LTX Desktop API (http://127.0.0.1:8000/api)
 

@@ -55,6 +55,9 @@ def build_app():
             t5 = tab5.build(pm_state, llm_dropdown=t2["llm_dropdown"])
             tab6.build()
 
+        # Wire Tab 2 generation events that depend on template components in Tab 5
+        tab2.wire_template_events(t2, t5, pm_state, t1["vocals_up"], t1["lyrics_in"])
+
         # ==========================================
         # BACKEND CHANGE → CAP MAX DURATION SLIDER
         def on_backend_change_cap(backend):
@@ -119,13 +122,13 @@ def build_app():
                      t2["shot_table"], t2["rough_concept_in"], t2["plot_out"], t2["performance_desc_in"],
                      t3["vid_gallery"], t2["bible_table"],
                      t1["vocals_up"], t1["song_up"], t1["lyrics_in"],
-                     t2["plot_sys_prompt_in"], t2["plot_user_template_in"],
-                     t2["plot_sys_prompt_scripted_in"], t2["plot_user_template_scripted_in"],
-                     t2["perf_sys_prompt_in"], t2["perf_user_template_in"],
-                     t2["perf_sys_prompt_scripted_in"], t2["perf_user_template_scripted_in"],
-                     t2["concepts_bulk_template_in"], t2["concepts_vocals_template_in"], t2["concepts_scripted_template_in"],
-                     t2["bible_sys_prompt_in"], t2["bible_user_template_in"],
-                     t2["zimage_template_in"]]
+                     t5["plot_sys_prompt_in"], t5["plot_user_template_in"],
+                     t5["plot_sys_prompt_scripted_in"], t5["plot_user_template_scripted_in"],
+                     t5["perf_sys_prompt_in"], t5["perf_user_template_in"],
+                     t5["perf_sys_prompt_scripted_in"], t5["perf_user_template_scripted_in"],
+                     t5["concepts_bulk_template_in"], t5["concepts_vocals_template_in"], t5["concepts_scripted_template_in"],
+                     t5["bible_sys_prompt_in"], t5["bible_user_template_in"],
+                     t5["zimage_template_in"]]
         )
 
         def handle_load(name, pm):
@@ -185,7 +188,7 @@ def build_app():
                 settings.get("last_ffp_style", "None"),
                 settings.get("last_ffp_director", "None"),
                 # Tab 3 generation preferences
-                settings.get("firstframe_mode", "LTX-Native"),
+                settings.get("firstframe_mode", "LTX-Native") if settings.get("firstframe_mode", "LTX-Native") in ("LTX-Native", "Z-Image First Frame") else "LTX-Native",
                 gr.update(visible=(settings.get("firstframe_mode", "LTX-Native") == "Z-Image First Frame"),
                           value=settings.get("llm_image_prompt_mode", "Use video prompt as-is")),
                 gr.update(visible=(settings.get("firstframe_mode", "LTX-Native") == "Z-Image First Frame"),
@@ -198,6 +201,7 @@ def build_app():
                 settings.get("last_camera_motion", "none"),
                 settings.get("last_director", "None"),
                 settings.get("last_style", "None"),
+                settings.get("vocal_chain_mode", False),
             )
 
         t1["load_btn"].click(
@@ -206,21 +210,21 @@ def build_app():
             outputs=[
                 t1["proj_status"], t1["time_spent_disp"], t2["shot_table"], t1["lyrics_in"], t1["vocals_up"], t1["song_up"],
                 t2["min_silence_sl"], t2["silence_thresh_sl"], t2["shot_mode_drp"], t2["min_shot_dur"], t2["max_shot_dur"],
-                t2["llm_dropdown"], t2["rough_concept_in"], t2["plot_out"], t2["prompt_template_in"],
+                t2["llm_dropdown"], t2["rough_concept_in"], t2["plot_out"], t5["prompt_template_in"],
                 t2["performance_desc_in"],
                 current_proj_var,
                 t3["vid_gallery"], t3["gallery_paths_state"], t3["vid_gen_start_btn"],
                 t2["video_mode_drp"], t2["scripted_total_dur"], t2["scripted_shot_count"],
                 t2["scripted_duration_row"], t2["scan_btn"],
                 t2["singer_gender_in"], t2["gen_performance_btn"],
-                t2["plot_sys_prompt_in"], t2["plot_user_template_in"],
-                t2["plot_sys_prompt_scripted_in"], t2["plot_user_template_scripted_in"],
-                t2["perf_sys_prompt_in"], t2["perf_user_template_in"],
-                t2["perf_sys_prompt_scripted_in"], t2["perf_user_template_scripted_in"],
-                t2["concepts_bulk_template_in"], t2["concepts_vocals_template_in"], t2["concepts_scripted_template_in"],
-                t2["bible_sys_prompt_in"], t2["bible_user_template_in"],
+                t5["plot_sys_prompt_in"], t5["plot_user_template_in"],
+                t5["plot_sys_prompt_scripted_in"], t5["plot_user_template_scripted_in"],
+                t5["perf_sys_prompt_in"], t5["perf_user_template_in"],
+                t5["perf_sys_prompt_scripted_in"], t5["perf_user_template_scripted_in"],
+                t5["concepts_bulk_template_in"], t5["concepts_vocals_template_in"], t5["concepts_scripted_template_in"],
+                t5["bible_sys_prompt_in"], t5["bible_user_template_in"],
                 t2["bible_table"],
-                t2["zimage_template_in"],
+                t5["zimage_template_in"],
                 # Tab 2 FFP preferences
                 t2["ffp_style_dropdown"], t2["ffp_director_dropdown"],
                 # Tab 3 generation preferences
@@ -230,6 +234,7 @@ def build_app():
                 t3["vid_versions_dropdown"], t3["vid_resolution_dropdown"],
                 t3["single_shot_camera_dropdown"], t3["vid_director_dropdown"],
                 t3["vid_style_dropdown"],
+                t3["vid_vocal_chain_checkbox"],
             ]
         )
 
