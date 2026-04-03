@@ -3,3 +3,4 @@ projects/
 __pycache__/
 LTX-API-Files/
 .git/
+run-dev.bat

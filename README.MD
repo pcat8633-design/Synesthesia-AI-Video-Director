@@ -104,7 +104,7 @@ For Windows users who prefer not to use the command line, a single launcher batc
 2. **Upload Assets** (Tab 1) — Upload an isolated vocal track (for timeline scanning), optionally upload the full song (for final assembly), and paste your lyrics.
 3. **Build the Timeline** (Tab 2) — Choose a mode, adjust silence detection settings, and click *Scan Vocals & Build Timeline*. The app splits your audio into Vocal and Action shots. Shot durations range from 1–10 seconds; shots over 5 seconds require 720p or lower and will auto-downgrade from 1080p.
 4. **Generate Prompts** (Tab 2) — Select your LLM model, write a rough concept, then generate the overarching plot and video prompts with the bulk generation button. Use **Character Bibles** (also on Tab 2) to define recurring characters with a consistent visual description — bibles are automatically injected into prompts at generation time so characters look the same across unrelated shots.
-5. **Generate Videos** (Tab 3) — Pick a generation mode, resolution, and optionally enable **Z-Image First Frame** mode for improved character consistency (see Tab 6 help for details). Click *Start Batch Generation*. Your video backend will render each shot.
+5. **Generate Videos** (Tab 3) — Pick a generation mode, resolution, and optionally enable **Z-Image First Frame** mode for improved character consistency, or **Chain consecutive vocal shots** for seamless frame continuity between consecutive vocal shots (see Tab 6 help for details on both). Click *Start Batch Generation*. Your video backend will render each shot.
 6. **Review & Assemble** (Tab 4) — Compare video versions for each shot, pick the best take, and assemble the final video with audio.
 
 ### Video Modes
@@ -120,13 +120,19 @@ The **Mode** dropdown on Tab 2 controls how the shot timeline is built:
 
 ### Settings
 
-API endpoints are configured on Tab 5:
+Synesthesia uses a **two-tier settings model**:
+
+- **Global settings** (`global_settings.json`) — API endpoints, cost/wattage, and any settings you've promoted with the **📌 Make Current Project Settings Default** button. Applied to every new project on creation.
+- **Project settings** (`projects/<name>/settings.json`) — all Tab 2 and Tab 3 preferences specific to that project (prompt templates, timeline settings, generation preferences, etc.). Saved automatically as you make changes.
+
+**Tab 5 — Settings** controls:
 
 - **Video Generation Backend** — select **LTX Desktop** (default) or **Wan2GP**. The URL field pre-fills with the appropriate default when you change backends.
 - **Video Backend API URL** — base URL for the video generation backend (`http://127.0.0.1:8000/api` for LTX Desktop; `http://127.0.0.1:7862/api` for Wan2GP).
 - **LLM API URL** — base URL for the local LLM backend. Supports **LM Studio** (default: `http://127.0.0.1:1234/v1`) and **llama.cpp** `llama-server.exe` (default: `http://127.0.0.1:8080/v1`).
+- **📌 Make Current Project Settings Default** — promotes the loaded project's prompt templates, timeline defaults, and generation preferences into `global_settings.json` so that every new project you create starts with those values instead of the built-in defaults.
 
-Settings persist across projects in `global_settings.json`.
+**Tab 3 generation preferences** (resolution, first-frame mode, style, director, versions, camera motion, vocal prompt mode, and Z-Image sub-settings) are all saved per-project automatically and restored when you reload that project.
 
 ### Hotkey
 
@@ -181,8 +187,9 @@ Pinokio sandboxes Wan2GP in its own Python environment. You must use Pinokio's P
 2. **Iterate on prompts** — use Export/Import CSV to batch-edit prompts in a spreadsheet before spending time on video generation. In All Vocals, All Action, and Scripted modes, you can also redistribute shot lengths by editing the `Duration` column — all timings are recalculated on import.
 3. **Generate multiple versions** — set Versions Per Shot to 2–3 and use the Cutting Room to pick the best take for each shot.
 4. **Use Regenerate AND Prompt** on shots you're unhappy with — sometimes a fresh LLM pass produces a much better visual concept.
-5. **Strict vs. Fallback assembly** — use Fallback mode to preview your edit before all shots are done, then switch to Strict for the final render.
-6. **Hotkey** — press `Ctrl+R` in the terminal window to restart the application quickly without losing your project data.
+5. **Chain consecutive vocal shots** — tick this checkbox in Tab 3 before batch-generating to eliminate duplicate frames at the cut points between consecutive vocal shots. Synesthesia generates each shot one second longer than needed, extracts a look-ahead frame just past the intended end, and uses it to condition the next shot's first frame. The extra second is trimmed in assembly automatically. For shots at their resolution's maximum duration (1080p at 5s, 720p at 10s), the generation is automatically downgraded one resolution tier to allow the extension.
+6. **Strict vs. Fallback assembly** — use Fallback mode to preview your edit before all shots are done, then switch to Strict for the final render.
+7. **Hotkey** — press `Ctrl+R` in the terminal window to restart the application quickly without losing your project data.
 
 ### ⚠️ Performance: Avoiding LTX RAM Leakage
 

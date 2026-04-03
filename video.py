@@ -11,12 +11,34 @@ import pandas as pd
 from pydub import AudioSegment
 
 import config
-from models import sync_video_directory
+from models import LLMBridge, sync_video_directory
 
 # Global cache for ffprobe frame counts to speed up preview loading in Tab 3
 FRAME_COUNT_CACHE = {}
 
 _zimage_url_cache = None  # Cached after first successful discovery
+
+
+def _ltx_headers() -> dict:
+    """Return Authorization header if an LTX auth token is configured, else empty dict."""
+    token = config.LTX_AUTH_TOKEN.strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def convert_prompt_for_zimage(base_prompt, pm, settings=None):
+    """Convert a video prompt into a still-image first-frame prompt via LLM.
+
+    Uses the project's zimage_prompt_template setting (falls back to the default
+    template in config.py). Operates on the raw base_prompt before any style/director
+    assembly so the result can be stably cached in the CSV.
+    """
+    if settings is None:
+        settings = pm.load_project_settings()
+    template = settings.get("zimage_prompt_template", config.DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE)
+    llm_model = settings.get("llm_model", "qwen3-vl-8b-instruct-abliterated-v2.0")
+    llm = LLMBridge()
+    user_msg = template.replace("{prompt}", base_prompt)
+    return llm.query("", user_msg, llm_model)
 
 
 def resolve_style_data(style_name, pm):
@@ -70,7 +92,6 @@ def get_project_renders(pm):
     render_paths = []
     for f in files:
         fname = os.path.basename(f)
-        render_paths.append(f)
         try:
             thumb_path = os.path.join(renders_dir, f"thumb_{fname}.jpg")
             if not os.path.exists(thumb_path):
@@ -80,10 +101,10 @@ def get_project_renders(pm):
                 )
             if os.path.exists(thumb_path):
                 gallery_data.append((thumb_path, fname))
-            else:
-                gallery_data.append((None, fname))
+                render_paths.append(f)
+            # Skip renders whose thumbnail can't be generated yet (e.g. file still being written)
         except Exception:
-            gallery_data.append((None, fname))
+            pass  # Skip unreadable files rather than appending None to gallery
 
     return gallery_data, render_paths
 
@@ -167,7 +188,7 @@ def _discover_zimage_url():
     host = base[:-4] if base.endswith('/api') else base  # e.g. http://127.0.0.1:8000
 
     try:
-        resp = requests.get(f"{host}/openapi.json", timeout=5)
+        resp = requests.get(f"{host}/openapi.json", timeout=5, headers=_ltx_headers())
         resp.raise_for_status()
         schema = resp.json()
         for path, methods in schema.get("paths", {}).items():
@@ -201,7 +222,7 @@ def generate_zimage_first_frame(prompt, shot_id, pm):
             result_container['error'] = "Could not discover Z-Image endpoint from LTX Desktop OpenAPI schema."
             return
         try:
-            resp = requests.post(url, json=payload)
+            resp = requests.post(url, json=payload, headers=_ltx_headers())
             resp.raise_for_status()
             result_container['response'] = resp.json()
         except requests.exceptions.RequestException as e:
@@ -216,7 +237,7 @@ def generate_zimage_first_frame(prompt, shot_id, pm):
     while t.is_alive():
         time.sleep(1)
         try:
-            prog_resp = requests.get(f"{config.LTX_BASE_URL}/generation/progress", timeout=2)
+            prog_resp = requests.get(f"{config.LTX_BASE_URL}/generation/progress", timeout=2, headers=_ltx_headers())
             if prog_resp.status_code == 200:
                 data = prog_resp.json()
                 yield f"Z-Image: {data.get('status')} | {data.get('phase')} | {data.get('progress')}%"
@@ -243,43 +264,149 @@ def generate_zimage_first_frame(prompt, shot_id, pm):
     yield (local_path, None)
 
 
-def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, director=None, generation_mode="LTX-Native", camera_motion="none"):
+def extract_last_frame(video_path: str, output_path: str):
+    """Extract and resize the last frame of video_path to 1920x1080, save to output_path.
+    Returns output_path on success, None on failure."""
+    import subprocess
+    try:
+        r = subprocess.run([
+            "ffmpeg", "-y", "-sseof", "-0.5", "-i", video_path,
+            "-vframes", "1",
+            "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+            "-q:v", "1", output_path
+        ], capture_output=True, timeout=15)
+        if r.returncode == 0 and os.path.exists(output_path):
+            return output_path
+    except Exception as e:
+        print(f"extract_last_frame error: {e}")
+    return None
+
+
+def extract_frame_at_time(video_path: str, time_sec: float, output_path: str):
+    """Extract the frame nearest to time_sec from video_path, resize to 1920x1080, save to output_path.
+    Returns output_path on success, None on failure."""
+    try:
+        r = subprocess.run([
+            "ffmpeg", "-y", "-ss", f"{time_sec:.6f}", "-i", video_path,
+            "-vframes", "1",
+            "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+            "-q:v", "1", output_path
+        ], capture_output=True, timeout=15)
+        if r.returncode == 0 and os.path.exists(output_path):
+            return output_path
+    except Exception as e:
+        print(f"extract_frame_at_time error: {e}")
+    return None
+
+
+def get_vocal_chain_predecessor_video_path(shot_id: str, pm):
+    """Return the Video_Path of the immediately preceding vocal shot in timeline order,
+    or None if there is no consecutive vocal predecessor, or its video doesn't exist."""
+    try:
+        ids = pm.df['Shot_ID'].astype(str).str.upper().tolist()
+        pos = ids.index(str(shot_id).upper())
+        if pos == 0:
+            return None
+        prev_row = pm.df.iloc[pos - 1]
+        if str(prev_row.get('Type', '')).strip() != 'Vocal':
+            return None
+        vp = str(prev_row.get('Video_Path', '')).strip()
+        if not vp or not os.path.exists(vp):
+            return None
+        return vp
+    except Exception:
+        return None
+
+
+def _vocal_chain_successor_is_vocal(shot_id: str, pm) -> bool:
+    """Return True if the immediately following shot in timeline order is Vocal."""
+    try:
+        ids = pm.df['Shot_ID'].astype(str).str.upper().tolist()
+        pos = ids.index(str(shot_id).upper())
+        if pos >= len(ids) - 1:
+            return False
+        return str(pm.df.iloc[pos + 1].get('Type', '')).strip() == 'Vocal'
+    except Exception:
+        return False
+
+
+# Per-resolution maximum durations for chain look-ahead extension.
+# 540p's 20s limit is user-verified on LTX Desktop; not reflected in get_ltx_frame_count().
+_CHAIN_EXT_MAX_DUR = {"1080p": 5, "720p": 10, "540p": 20}
+# Downgrade ladder: if at resolution's max, try the next lower tier.
+_CHAIN_EXT_DOWNGRADE = {"1080p": "720p", "720p": "540p"}
+
+
+def _get_chain_extension_resolution(resolution: str, original_dur: int):
+    """Return (effective_resolution, can_extend) for the chain look-ahead extension.
+
+    - Under the resolution max: extend at same resolution.
+    - At the max: downgrade to the next-lower tier if that allows extension.
+    - No downgrade available (540p at 20s): cannot extend → fall back to old method.
+    """
+    max_dur = _CHAIN_EXT_MAX_DUR.get(resolution, 10)
+    if original_dur < max_dur:
+        return resolution, True
+    downgraded = _CHAIN_EXT_DOWNGRADE.get(resolution)
+    if downgraded is None:
+        return resolution, False
+    downgraded_max = _CHAIN_EXT_MAX_DUR.get(downgraded, 10)
+    if original_dur < downgraded_max:
+        return downgraded, True
+    return resolution, False
+
+
+def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, director=None, generation_mode="LTX-Native", camera_motion="none", use_llm_image_prompt=False, caching_mode="Use cached prompt", vocal_chain_mode=False):
+    reuse_first_frame = (caching_mode == "Use cached image")
+    skip_prompt_cache = (caching_mode == "Regenerate both on each render")
     row_idx = pm.df.index[pm.df['Shot_ID'].astype(str).str.upper() == str(shot_id).upper()].tolist()
     if not row_idx:
         yield None, "Error: Shot not found in timeline."
         return
 
     row = pm.df.loc[row_idx[0]]
-    vid_prompt_raw = row.get('Video_Prompt', '')
-    vid_prompt = "" if pd.isna(vid_prompt_raw) else str(vid_prompt_raw).strip()
 
-    if row.get('Type') == "Vocal" and vocal_mode == "Use Singer/Band Description":
-        settings = pm.load_project_settings()
-        perf_desc = settings.get("performance_desc", "")
-        if perf_desc:
-            vid_prompt = perf_desc
-
-    if not vid_prompt:
-        yield None, "Error: Missing Video Prompt."
-        return
-
-    # Inject character bible descriptions (first occurrence of each name only)
-    if pm.character_bibles:
-        vid_prompt = apply_character_bibles(vid_prompt, pm.character_bibles)
-
+    is_override = str(row.get('Prompt_Override', '')).strip().lower() == 'true'
     negative_prompt = config.DEFAULT_NEGATIVE_PROMPT
     style_data = resolve_style_data(style, pm)
     if style_data:
-        vid_prompt = style_data["prompt"].replace("{prompt}", vid_prompt)
         negative_prompt = config.DEFAULT_NEGATIVE_PROMPT + ", " + style_data["negative_prompt"]
 
-    if director and director != "None":
-        effective_director = director
-        if director == "Custom":
+    if is_override:
+        vid_prompt = str(row.get('Prompt_Override_Text', '')).strip()
+        if not vid_prompt:
+            yield None, f"Error: Override flag is set for {shot_id} but override text is empty."
+            return
+        print(f"⚡ Prompt override active for {shot_id}.")
+        print(f"🎬 Override Prompt:\n{vid_prompt}\n=================================\n")
+    else:
+        vid_prompt_raw = row.get('Video_Prompt', '')
+        vid_prompt = "" if pd.isna(vid_prompt_raw) else str(vid_prompt_raw).strip()
+
+        if row.get('Type') == "Vocal" and vocal_mode == "Use Singer/Band Description":
             settings = pm.load_project_settings()
-            effective_director = settings.get("custom_director", "")
-        if effective_director:
-            vid_prompt += f". This video was directed by {effective_director}."
+            perf_desc = settings.get("performance_desc", "")
+            if perf_desc:
+                vid_prompt = perf_desc
+
+        if not vid_prompt:
+            yield None, "Error: Missing Video Prompt."
+            return
+
+        # Inject character bible descriptions (first occurrence of each name only)
+        if pm.character_bibles:
+            vid_prompt = apply_character_bibles(vid_prompt, pm.character_bibles)
+
+        if style_data:
+            vid_prompt = style_data["prompt"].replace("{prompt}", vid_prompt)
+
+        if director and director != "None":
+            effective_director = director
+            if director == "Custom":
+                settings = pm.load_project_settings()
+                effective_director = settings.get("custom_director", "")
+            if effective_director:
+                vid_prompt += f". This video was directed by {effective_director}."
 
     print(f"\n🎬 === START VIDEO GENERATION (LTX) ===")
     print(f"🎬 Shot ID: {shot_id} | Type: {row['Type']}")
@@ -299,19 +426,162 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, dir
         "audio": "false"
     }
 
-    # --- Z-Image first frame conditioning ---
-    if generation_mode == "Z-Image First Frame":
-        print(f"🖼️ === GENERATING Z-IMAGE FIRST FRAME ===")
-        frame_path, frame_err = None, "Unknown"
-        for item in generate_zimage_first_frame(vid_prompt, shot_id, pm):
-            if isinstance(item, tuple):
-                frame_path, frame_err = item
+    # --- Vocal Chain: extend duration by 1s to produce a look-ahead chain frame ---
+    # Generating 1 extra second allows us to extract a frame just past the shot's intended
+    # end to use as imagePath conditioning for the next shot, avoiding a duplicate first frame.
+    # If the shot is at its resolution's max duration, downgrade resolution to enable extension.
+    _original_dur = int(float(payload["duration"]))
+    _extend_for_chain = False
+    if vocal_chain_mode and row.get('Type') == 'Vocal':
+        if _vocal_chain_successor_is_vocal(shot_id, pm):
+            _chain_res, _can_extend = _get_chain_extension_resolution(resolution, _original_dur)
+            if _can_extend:
+                payload["duration"] = str(_original_dur + 1)
+                _extend_for_chain = True
+                if _chain_res != resolution:
+                    payload["resolution"] = _chain_res
+                    yield None, (f"⬇️ Downgrading to {_chain_res} for chain look-ahead "
+                                 f"({resolution} is at its {_original_dur}s max).")
+                print(f"🔗 Extending {shot_id} to {_original_dur + 1}s"
+                      f"{' at ' + _chain_res if _chain_res != resolution else ''} for chain look-ahead.")
             else:
-                yield None, item
-        if frame_err:
-            yield None, f"Error: Z-Image failed: {frame_err}"
-            return
-        payload["imagePath"] = os.path.abspath(frame_path)
+                yield None, (f"⚠️ {shot_id} is at max duration for all resolutions — "
+                             f"using fallback chain method (first frame may be near-duplicate).")
+
+    # --- Vocal Chain Last Frame conditioning ---
+    _chain_set_imagepath = False
+    if vocal_chain_mode and row.get('Type') == 'Vocal':
+        try:
+            ids = pm.df['Shot_ID'].astype(str).str.upper().tolist()
+            pos = ids.index(str(shot_id).upper())
+            if pos > 0:
+                prev_row = pm.df.iloc[pos - 1]
+                if str(prev_row.get('Type', '')).strip() == 'Vocal':
+                    pred_id = str(prev_row['Shot_ID'])
+                    pred_vid = str(prev_row.get('Video_Path', '')).strip()
+
+                    # Prefer the look-ahead chain frame (avoids duplicate first frame)
+                    chain_out_path = os.path.join(
+                        pm.get_path("first_frames"),
+                        f"{pred_id}_chain_out.jpg"
+                    )
+                    if os.path.exists(chain_out_path):
+                        # Stale check: chain_out.jpg must be newer than the predecessor's video.
+                        # If shot N was re-rendered without chain mode, the old chain_out.jpg
+                        # no longer matches its visual content.
+                        _chain_out_fresh = True
+                        if pred_vid and os.path.exists(pred_vid):
+                            try:
+                                _chain_out_fresh = (os.path.getmtime(chain_out_path)
+                                                    >= os.path.getmtime(pred_vid))
+                            except OSError:
+                                pass  # Can't stat — assume fresh
+                        if _chain_out_fresh:
+                            payload["imagePath"] = os.path.abspath(chain_out_path)
+                            _chain_set_imagepath = True
+                            yield None, "🔗 Using look-ahead chain frame from preceding vocal shot..."
+                        else:
+                            print(f"⚠️ {pred_id}_chain_out.jpg is stale (older than its video) — falling back.")
+                            # Fall through to extract_last_frame below
+                    if not _chain_set_imagepath and pred_vid and os.path.exists(pred_vid):
+                        # Fallback: extract last frame (may produce near-duplicate first frame)
+                        _chain_frame_path = os.path.join(
+                            pm.get_path("first_frames"),
+                            f"{shot_id}_chain_frame_v{int(time.time())}.jpg"
+                        )
+                        yield None, "🔗 Extracting last frame from preceding vocal shot (no look-ahead available)..."
+                        _extracted = extract_last_frame(pred_vid, _chain_frame_path)
+                        if _extracted:
+                            payload["imagePath"] = os.path.abspath(_extracted)
+                            _chain_set_imagepath = True
+                        else:
+                            yield None, "⚠️ Chain frame extraction failed — continuing without first frame."
+        except Exception as e:
+            print(f"Vocal chain lookup error: {e}")
+
+    # --- Z-Image first frame conditioning ---
+    # Skip if chain already provided imagePath (chain takes precedence for non-first shots in sequence)
+    if generation_mode == "Z-Image First Frame" and not _chain_set_imagepath:
+        zimage_prompt = vid_prompt  # default: use fully-assembled video prompt as-is
+
+        if use_llm_image_prompt:
+            settings_z = pm.load_project_settings()
+            # Check per-shot cache in CSV (skipped when caching mode is "Regenerate both")
+            cached_ffp = ""
+            if not skip_prompt_cache and "First_Frame_Prompt" in pm.df.columns:
+                _raw_cached = pm.df.loc[row_idx[0], "First_Frame_Prompt"]
+                if _raw_cached and not pd.isna(_raw_cached) and str(_raw_cached).strip():
+                    cached_ffp = str(_raw_cached).strip()
+            if cached_ffp:
+                zimage_prompt = cached_ffp
+                yield None, "♻️ Using cached first-frame image prompt..."
+            else:
+                # For Vocal + "Use Singer/Band Description": use project-level cache
+                if row.get("Type") == "Vocal" and vocal_mode == "Use Singer/Band Description":
+                    if (not skip_prompt_cache
+                            and settings_z.get("zimage_vocal_source_assembled") == vid_prompt
+                            and settings_z.get("zimage_vocal_first_frame_prompt")):
+                        zimage_prompt = settings_z["zimage_vocal_first_frame_prompt"]
+                        yield None, "♻️ Using cached vocal first-frame image prompt..."
+                    else:
+                        yield None, "🧠 Converting vocal prompt to still image prompt via LLM..."
+                        zimage_prompt = convert_prompt_for_zimage(vid_prompt, pm, settings_z)
+                        if not skip_prompt_cache:
+                            pm.save_project_settings({
+                                "zimage_vocal_first_frame_prompt": zimage_prompt,
+                                "zimage_vocal_source_assembled": vid_prompt,
+                            })
+                else:
+                    # Convert fully-assembled vid_prompt (with styles, character bibles, director)
+                    # so the LLM sees the same prompt that LTX will use for video generation
+                    yield None, "🧠 Converting prompt to still image prompt via LLM..."
+                    zimage_prompt = convert_prompt_for_zimage(vid_prompt, pm, settings_z)
+                # Cache the converted prompt to CSV for reuse (skipped when caching mode is "Regenerate both")
+                if not skip_prompt_cache and "First_Frame_Prompt" in pm.df.columns:
+                    pm.df.at[row_idx[0], "First_Frame_Prompt"] = zimage_prompt
+                    pm.save_data()
+
+        # Signal the queue processor to update the First Frame Prompt textbox in the UI
+        pm._display_ffp = zimage_prompt
+
+        # --- Reuse cached first frame image if requested ---
+        _reused_frame = False
+        if reuse_first_frame and "First_Frame_Image_Path" in pm.df.columns:
+            _cached_rel = pm.df.loc[row_idx[0], "First_Frame_Image_Path"]
+            _cached_src = ""
+            if "First_Frame_Image_Source" in pm.df.columns:
+                _raw_src = pm.df.loc[row_idx[0], "First_Frame_Image_Source"]
+                _cached_src = "" if pd.isna(_raw_src) else str(_raw_src)
+            if _cached_rel and not pd.isna(_cached_rel) and str(_cached_rel).strip():
+                _project_root = os.path.join(pm.base_dir, pm.current_project)
+                _cached_abs = os.path.join(_project_root, str(_cached_rel).strip())
+                # Only reuse if the file exists AND it was generated from the same assembled prompt
+                if os.path.exists(_cached_abs) and _cached_src == zimage_prompt:
+                    yield None, "♻️ Reusing cached first frame image..."
+                    payload["imagePath"] = os.path.abspath(_cached_abs)
+                    _reused_frame = True
+
+        if not _reused_frame:
+            print(f"🖼️ === GENERATING Z-IMAGE FIRST FRAME ===")
+            print(f"🖼️ Z-Image prompt:\n{zimage_prompt}\n=================================\n")
+            frame_path, frame_err = None, "Unknown"
+            for item in generate_zimage_first_frame(zimage_prompt, shot_id, pm):
+                if isinstance(item, tuple):
+                    frame_path, frame_err = item
+                else:
+                    yield None, item
+            if frame_err:
+                yield None, f"Error: Z-Image failed: {frame_err}"
+                return
+            payload["imagePath"] = os.path.abspath(frame_path)
+            # Cache the image path and source prompt for future reuse if requested
+            if reuse_first_frame and "First_Frame_Image_Path" in pm.df.columns:
+                _project_root = os.path.join(pm.base_dir, pm.current_project)
+                _rel_path = os.path.relpath(frame_path, _project_root)
+                pm.df.at[row_idx[0], "First_Frame_Image_Path"] = _rel_path
+                if "First_Frame_Image_Source" in pm.df.columns:
+                    pm.df.at[row_idx[0], "First_Frame_Image_Source"] = zimage_prompt
+                pm.save_data()
 
     if row['Type'] == "Vocal":
         vocals_path = pm.get_asset_path_if_exists("vocals.mp3")
@@ -334,6 +604,10 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, dir
                 silence_pad = AudioSegment.silent(duration=deficit)
                 chunk = chunk + silence_pad
 
+            # Pad audio to match extended duration so LTX accepts the request
+            if _extend_for_chain:
+                chunk = chunk + AudioSegment.silent(duration=1000)
+
             chunk_path = os.path.join(pm.get_path("audio_chunks"), f"{shot_id}_audio.mp3")
             chunk.export(chunk_path, format="mp3")
 
@@ -349,7 +623,7 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, dir
 
     def worker():
         try:
-            resp = requests.post(f"{config.LTX_BASE_URL}/generate", json=payload)
+            resp = requests.post(f"{config.LTX_BASE_URL}/generate", json=payload, headers=_ltx_headers())
             resp.raise_for_status()
             result_container['response'] = resp.json()
         except requests.exceptions.RequestException as e:
@@ -364,7 +638,7 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, dir
     while t.is_alive():
         time.sleep(1)
         try:
-            prog_resp = requests.get(f"{config.LTX_BASE_URL}/generation/progress", timeout=2)
+            prog_resp = requests.get(f"{config.LTX_BASE_URL}/generation/progress", timeout=2, headers=_ltx_headers())
             if prog_resp.status_code == 200:
                 data = prog_resp.json()
                 status_text = f"LTX Progress - Status: {data.get('status')} | Phase: {data.get('phase')} | {data.get('progress')}%"
@@ -395,6 +669,37 @@ def generate_video_for_shot(shot_id, resolution, vocal_mode, pm, style=None, dir
         pm.df.at[row_idx[0], 'Status'] = 'Done'
         pm.df.at[row_idx[0], 'Render_Resolution'] = resolution
         pm.save_data()
+
+        if _extend_for_chain:
+            # Extract the frame 1 frame past the shot's intended end.
+            # LTX uses D*24+1 frames for D seconds, so the last frame of the original
+            # duration is at exactly _original_dur seconds; the look-ahead is 1/24s later.
+            _chain_out_time = _original_dur + 1 / 24
+            _chain_out_path = os.path.join(
+                pm.get_path("first_frames"),
+                f"{shot_id}_chain_out.jpg"
+            )
+            yield None, "🔗 Extracting look-ahead chain frame..."
+            _extracted = extract_frame_at_time(local_path, _chain_out_time, _chain_out_path)
+            if _extracted:
+                print(f"🔗 Chain look-ahead frame saved: {_chain_out_path}")
+                # Warn if the successor vocal shot is already rendered — its conditioning is now stale.
+                try:
+                    _s_ids = pm.df['Shot_ID'].astype(str).str.upper().tolist()
+                    _s_pos = _s_ids.index(str(shot_id).upper())
+                    if _s_pos < len(_s_ids) - 1:
+                        _succ_row = pm.df.iloc[_s_pos + 1]
+                        if str(_succ_row.get('Type', '')).strip() == 'Vocal':
+                            _succ_vid = str(_succ_row.get('Video_Path', '')).strip()
+                            if _succ_vid and os.path.exists(_succ_vid):
+                                _succ_id = str(_succ_row['Shot_ID'])
+                                yield None, (f"⚠️ Shot {_succ_id} is already rendered — "
+                                             f"re-render it to apply the new chain frame.")
+                except Exception:
+                    pass
+            else:
+                print(f"⚠️ Chain look-ahead frame extraction failed for {shot_id}")
+
         yield local_path, "Done"
     else:
         pm.df.at[row_idx[0], 'Status'] = 'Error'

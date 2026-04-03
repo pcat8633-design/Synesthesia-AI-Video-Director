@@ -26,6 +26,12 @@ def build(pm_state, llm_dropdown):
                 value=config.LTX_BASE_URL,
                 placeholder="http://127.0.0.1:8000/api",
             )
+            ltx_auth_token_in = gr.Textbox(
+                label="LTX Desktop Auth Token",
+                value=config.LTX_AUTH_TOKEN,
+                placeholder="Leave blank for no auth (vanilla LTX Desktop)",
+                info="Set to match LTX_AUTH_TOKEN in your LTX Desktop fork. Leave blank for stock LTX Desktop.",
+            )
             lm_url_in = gr.Textbox(
                 label="LLM API URL (LM Studio / llama.cpp)",
                 value=config.LM_STUDIO_URL,
@@ -59,6 +65,8 @@ def build(pm_state, llm_dropdown):
         with gr.Row():
             save_settings_btn = gr.Button("💾 Save Settings", variant="primary")
             calibration_reset_btn = gr.Button("🔄 Reset Render Calibration", variant="secondary")
+        with gr.Row():
+            make_default_btn = gr.Button("📌 Make Current Project Settings Default", variant="secondary")
         settings_status = gr.Textbox(label="Status", interactive=False)
 
         with gr.Accordion("📊 Render Calibration Stats", open=False):
@@ -69,6 +77,49 @@ def build(pm_state, llm_dropdown):
                 lines=8,
             )
             calibration_refresh_btn = gr.Button("🔄 Refresh Stats", variant="secondary")
+
+        with gr.Accordion("Advanced: LLM Prompt Templates", open=False):
+            gr.Markdown("Customize the prompts sent to the local LLM for each generation step. "
+                        "Templates use `{placeholder}` syntax for dynamic values. "
+                        "Changes auto-save per project.")
+            reset_templates_btn = gr.Button("Reset All Templates to Defaults")
+
+            with gr.Accordion("Plot Generation Template", open=False):
+                plot_sys_prompt_in = gr.Textbox(value=config.DEFAULT_PLOT_SYSTEM_PROMPT_MUSIC, label="System Prompt (Music Video Mode)", lines=2)
+                plot_user_template_in = gr.Textbox(value=config.DEFAULT_PLOT_USER_TEMPLATE_MUSIC, label="User Prompt Template (Music Video Mode)", lines=4)
+                gr.Markdown("*Placeholders: `{concept}`, `{lyrics}`, `{timeline}`*")
+                plot_sys_prompt_scripted_in = gr.Textbox(value=config.DEFAULT_PLOT_SYSTEM_PROMPT_SCRIPTED, label="System Prompt (Scripted Mode)", lines=2)
+                plot_user_template_scripted_in = gr.Textbox(value=config.DEFAULT_PLOT_USER_TEMPLATE_SCRIPTED, label="User Prompt Template (Scripted Mode)", lines=4)
+                gr.Markdown("*Placeholders: `{concept}`, `{timeline}`*")
+
+            with gr.Accordion("Performance Description Template", open=False):
+                perf_sys_prompt_in = gr.Textbox(value=config.DEFAULT_PERF_SYSTEM_PROMPT_MUSIC, label="System Prompt (Music Video Mode)", lines=2)
+                perf_user_template_in = gr.Textbox(value=config.DEFAULT_PERF_USER_TEMPLATE_MUSIC, label="User Prompt Template (Music Video Mode)", lines=4)
+                gr.Markdown("*Placeholders: `{concept}`, `{plot}`, `{gender_instruction}`*")
+                perf_sys_prompt_scripted_in = gr.Textbox(value=config.DEFAULT_PERF_SYSTEM_PROMPT_SCRIPTED, label="System Prompt (Scripted Mode)", lines=2)
+                perf_user_template_scripted_in = gr.Textbox(value=config.DEFAULT_PERF_USER_TEMPLATE_SCRIPTED, label="User Prompt Template (Scripted Mode)", lines=4)
+                gr.Markdown("*Placeholders: `{concept}`, `{plot}`, `{gender_instruction}`*")
+
+            with gr.Accordion("Video Prompt Generation Template (Bulk)", open=False):
+                concepts_bulk_template_in = gr.Textbox(value=config.BULK_PROMPT_TEMPLATE, label="Intercut / All Action Template", lines=6)
+                gr.Markdown("*Placeholders: `{lyrics}`, `{plot}`, `{shot_list}`*")
+                concepts_vocals_template_in = gr.Textbox(value=config.ALL_VOCALS_PROMPT_TEMPLATE, label="All Vocals Template", lines=6)
+                gr.Markdown("*Placeholders: `{lyrics}`, `{plot}`, `{performance_desc}`, `{shot_list}`*")
+                concepts_scripted_template_in = gr.Textbox(value=config.SCRIPTED_PROMPT_TEMPLATE, label="Scripted Template", lines=6)
+                gr.Markdown("*Placeholders: `{gender}`, `{character_desc}`, `{concept}`, `{shot_list}`*")
+
+            with gr.Accordion("Character Bible Template", open=False):
+                bible_sys_prompt_in = gr.Textbox(value=config.CHARACTER_BIBLE_SYSTEM_PROMPT, label="System Prompt", lines=2)
+                bible_user_template_in = gr.Textbox(value=config.CHARACTER_BIBLE_USER_TEMPLATE, label="User Prompt Template", lines=8)
+                gr.Markdown("*Placeholders: `{shot_prompts}`*")
+
+            with gr.Accordion("Single Shot Regeneration Template (Used in Tab 3)", open=False):
+                prompt_template_in = gr.Textbox(value=config.DEFAULT_CONCEPT_PROMPT, label="Single Shot Prompt Template", lines=4)
+                gr.Markdown("*Placeholders: `{plot}`, `{prev_shot}`, `{start}`, `{duration}`, `{type}`*")
+
+            with gr.Accordion("Z-Image First Frame Prompt Conversion (Used in Tab 3)", open=False):
+                zimage_template_in = gr.Textbox(value=config.DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE, label="Z-Image Prompt Conversion Template", lines=3)
+                gr.Markdown("*Placeholder: `{prompt}` — the video prompt to be converted to a still-image prompt.*")
 
         with gr.Accordion("Wan2GP Setup Instructions", open=(config.VIDEO_BACKEND == "Wan2GP")) as wan2gp_accordion:
             gr.Markdown("""
@@ -158,9 +209,10 @@ Pinokio sandboxes Wan2GP in its own Python environment — you must use Pinokio'
         outputs=[video_backend_drp, video_api_url_in, wan2gp_accordion, backend_switch_status],
     )
 
-    def handle_save_settings(video_url, lm_url, backend, electricity_cost, system_wattage, gpu_monitor):
+    def handle_save_settings(video_url, ltx_auth_token, lm_url, backend, electricity_cost, system_wattage, gpu_monitor):
         settings = {
             "ltx_base_url": video_url,
+            "ltx_auth_token": ltx_auth_token,
             "lm_studio_url": lm_url,
             "video_backend": backend,
             "electricity_cost": electricity_cost,
@@ -172,7 +224,7 @@ Pinokio sandboxes Wan2GP in its own Python environment — you must use Pinokio'
 
     save_settings_btn.click(
         handle_save_settings,
-        inputs=[video_api_url_in, lm_url_in, video_backend_drp, electricity_cost_in, system_wattage_in, gpu_monitor_drp],
+        inputs=[video_api_url_in, ltx_auth_token_in, lm_url_in, video_backend_drp, electricity_cost_in, system_wattage_in, gpu_monitor_drp],
         outputs=[settings_status, llm_dropdown],
     )
 
@@ -189,4 +241,90 @@ Pinokio sandboxes Wan2GP in its own Python environment — you must use Pinokio'
         outputs=[calibration_stats_txt],
     )
 
-    return {"video_backend_drp": video_backend_drp}
+    def handle_make_default(pm):
+        if not pm or not pm.current_project:
+            return "❌ No project loaded. Load a project first."
+        project_settings = pm.load_project_settings()
+        to_save = {k: v for k, v in project_settings.items() if k in config.GLOBALIZABLE_KEYS}
+        if not to_save:
+            return "⚠️ No globalizable settings found in current project."
+        config.save_global_url_settings(to_save)
+        return f"✅ {len(to_save)} settings saved as global defaults."
+
+    make_default_btn.click(handle_make_default, inputs=[pm_state], outputs=[settings_status])
+
+    # --- Template auto-save and reset ---
+
+    _template_inputs = [
+        plot_sys_prompt_in, plot_user_template_in, plot_sys_prompt_scripted_in, plot_user_template_scripted_in,
+        perf_sys_prompt_in, perf_user_template_in, perf_sys_prompt_scripted_in, perf_user_template_scripted_in,
+        concepts_bulk_template_in, concepts_vocals_template_in, concepts_scripted_template_in,
+        bible_sys_prompt_in, bible_user_template_in,
+        prompt_template_in, zimage_template_in,
+        pm_state,
+    ]
+
+    def auto_save_templates(p_sys_m, p_user_m, p_sys_s, p_user_s,
+                            pf_sys_m, pf_user_m, pf_sys_s, pf_user_s,
+                            c_bulk, c_vocals, c_scripted,
+                            b_sys, b_user, prompt_tmpl, zi_template, pm):
+        if pm and pm.current_project:
+            pm.save_project_settings({
+                "plot_sys_prompt_music": p_sys_m, "plot_user_template_music": p_user_m,
+                "plot_sys_prompt_scripted": p_sys_s, "plot_user_template_scripted": p_user_s,
+                "perf_sys_prompt_music": pf_sys_m, "perf_user_template_music": pf_user_m,
+                "perf_sys_prompt_scripted": pf_sys_s, "perf_user_template_scripted": pf_user_s,
+                "concepts_bulk_template": c_bulk, "concepts_vocals_template": c_vocals,
+                "concepts_scripted_template": c_scripted,
+                "bible_sys_prompt": b_sys, "bible_user_template": b_user,
+                "prompt_template": prompt_tmpl,
+                "zimage_prompt_template": zi_template,
+            })
+
+    for _tmpl_comp in [plot_sys_prompt_in, plot_user_template_in, plot_sys_prompt_scripted_in, plot_user_template_scripted_in,
+                       perf_sys_prompt_in, perf_user_template_in, perf_sys_prompt_scripted_in, perf_user_template_scripted_in,
+                       concepts_bulk_template_in, concepts_vocals_template_in, concepts_scripted_template_in,
+                       bible_sys_prompt_in, bible_user_template_in, prompt_template_in, zimage_template_in]:
+        _tmpl_comp.blur(auto_save_templates, inputs=_template_inputs)
+
+    def reset_templates():
+        return (
+            config.DEFAULT_PLOT_SYSTEM_PROMPT_MUSIC, config.DEFAULT_PLOT_USER_TEMPLATE_MUSIC,
+            config.DEFAULT_PLOT_SYSTEM_PROMPT_SCRIPTED, config.DEFAULT_PLOT_USER_TEMPLATE_SCRIPTED,
+            config.DEFAULT_PERF_SYSTEM_PROMPT_MUSIC, config.DEFAULT_PERF_USER_TEMPLATE_MUSIC,
+            config.DEFAULT_PERF_SYSTEM_PROMPT_SCRIPTED, config.DEFAULT_PERF_USER_TEMPLATE_SCRIPTED,
+            config.BULK_PROMPT_TEMPLATE, config.ALL_VOCALS_PROMPT_TEMPLATE, config.SCRIPTED_PROMPT_TEMPLATE,
+            config.CHARACTER_BIBLE_SYSTEM_PROMPT, config.CHARACTER_BIBLE_USER_TEMPLATE,
+            config.DEFAULT_CONCEPT_PROMPT,
+            config.DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE,
+        )
+
+    reset_templates_btn.click(reset_templates, outputs=[
+        plot_sys_prompt_in, plot_user_template_in,
+        plot_sys_prompt_scripted_in, plot_user_template_scripted_in,
+        perf_sys_prompt_in, perf_user_template_in,
+        perf_sys_prompt_scripted_in, perf_user_template_scripted_in,
+        concepts_bulk_template_in, concepts_vocals_template_in, concepts_scripted_template_in,
+        bible_sys_prompt_in, bible_user_template_in,
+        prompt_template_in,
+        zimage_template_in,
+    ])
+
+    return {
+        "video_backend_drp": video_backend_drp,
+        "plot_sys_prompt_in": plot_sys_prompt_in,
+        "plot_user_template_in": plot_user_template_in,
+        "plot_sys_prompt_scripted_in": plot_sys_prompt_scripted_in,
+        "plot_user_template_scripted_in": plot_user_template_scripted_in,
+        "perf_sys_prompt_in": perf_sys_prompt_in,
+        "perf_user_template_in": perf_user_template_in,
+        "perf_sys_prompt_scripted_in": perf_sys_prompt_scripted_in,
+        "perf_user_template_scripted_in": perf_user_template_scripted_in,
+        "concepts_bulk_template_in": concepts_bulk_template_in,
+        "concepts_vocals_template_in": concepts_vocals_template_in,
+        "concepts_scripted_template_in": concepts_scripted_template_in,
+        "bible_sys_prompt_in": bible_sys_prompt_in,
+        "bible_user_template_in": bible_user_template_in,
+        "prompt_template_in": prompt_template_in,
+        "zimage_template_in": zimage_template_in,
+    }

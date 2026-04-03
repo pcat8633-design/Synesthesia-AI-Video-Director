@@ -7,6 +7,7 @@ import glob
 # CONFIGURATION
 # ==========================================
 LTX_BASE_URL = "http://127.0.0.1:8000/api"
+LTX_AUTH_TOKEN: str = ""  # Bearer token for LTX Desktop auth; empty = no auth (vanilla LTX)
 LM_STUDIO_URL = "http://127.0.0.1:1234/v1"
 VIDEO_BACKEND = "LTX Desktop"  # "LTX Desktop" | "Wan2GP"
 ELECTRICITY_COST = 0.1805  # USD per kWh (default 18.05¢)
@@ -187,7 +188,7 @@ REQUIRED_COLUMNS = [
     "Shot_ID", "Type",
     "Start_Time", "End_Time", "Duration",
     "Start_Frame", "End_Frame", "Total_Frames",
-    "Lyrics", "Video_Prompt", "Characters", "Video_Path", "All_Video_Paths", "Status",
+    "Lyrics", "Video_Prompt", "First_Frame_Prompt", "First_Frame_Image_Path", "First_Frame_Image_Source", "Prompt_Override", "Prompt_Override_Text", "Characters", "Video_Path", "All_Video_Paths", "Status",
     "Render_Resolution",
 ]
 
@@ -286,6 +287,19 @@ LTX_SYSTEM_PROMPT = """You are an expert cinematography AI director writing vide
 8. Detail scale: Match your detail to the shot scale (Closeups need more precise detail than wide shots).
 9. Camera focus: When describing camera movement, focus on the camera's relationship to the subject.
 10. Length: Write 4 to 8 descriptive sentences to cover all key aspects."""
+
+DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE = (
+    "Redesign this video prompt to be an image prompt representing the first frame of the video. "
+    "It is ok to keep descriptions of camera position, type, and usage but remove anything about passage of time or motion. "
+    "If there are multiple actions described, describe only the first one. "
+    "Keep your prompt as close to the original as possible while following these guidelines. "
+    "There should be no text overlays mention about the image. "
+    "Return the new image prompt only, no other text. "
+    "For example, do not include a sentence at the end of the image prompt listing the correctly followed instructions :D "
+    "This will just be misinterpreted by the image model AS additional instructions. "
+    "Thanks! \n\nVideo prompt: {prompt}"
+)
+ZIMAGE_PROMPT_SYSTEM_PROMPT = "You are an expert still image prompt writer for AI image generators."
 
 SCRIPTED_PROMPT_TEMPLATE = """Create a short narrative film via AI video prompts while adhering to the following main character, gender, settings, and rough concept.  See also the following csv shot list with durations and frame counts.  Return the shot list csv data with each "Video_Prompt" field filled out. include the Shot_ID and Type fields for these rows.  Do NOT include any other text in your reply.  Enclose the video prompt column in "" to prevent any commas inside the video prompt from corrupting the data.
 Follow the ltx prompt guide below to create each "action" prompt. Give each recurring character a unique first name and refer to them ONLY by that first name throughout — do NOT describe their physical appearance in the prompts. A separate character bible will inject visual descriptions automatically to keep characters consistent.
@@ -438,6 +452,61 @@ DEFAULT_PERF_USER_TEMPLATE_SCRIPTED = (
 )
 
 # ==========================================
+# GLOBAL DEFAULTS — keys that can be promoted to global and seeded into new projects
+# ==========================================
+
+GLOBALIZABLE_KEYS = frozenset({
+    # Prompt templates
+    "plot_sys_prompt_music", "plot_user_template_music",
+    "plot_sys_prompt_scripted", "plot_user_template_scripted",
+    "perf_sys_prompt_music", "perf_user_template_music",
+    "perf_sys_prompt_scripted", "perf_user_template_scripted",
+    "concepts_bulk_template", "concepts_vocals_template", "concepts_scripted_template",
+    "bible_sys_prompt", "bible_user_template",
+    "prompt_template", "zimage_prompt_template",
+    # Timeline defaults
+    "min_silence", "silence_thresh", "shot_mode", "min_dur", "max_dur", "video_mode",
+    # Video generation preferences
+    "firstframe_mode", "llm_image_prompt_mode", "first_frame_reuse_mode",
+    "vocal_prompt_mode", "vocal_chain_mode", "last_resolution", "last_versions",
+    "last_camera_motion", "last_director", "last_style",
+})
+
+_CODE_DEFAULTS = {
+    "plot_sys_prompt_music": DEFAULT_PLOT_SYSTEM_PROMPT_MUSIC,
+    "plot_user_template_music": DEFAULT_PLOT_USER_TEMPLATE_MUSIC,
+    "plot_sys_prompt_scripted": DEFAULT_PLOT_SYSTEM_PROMPT_SCRIPTED,
+    "plot_user_template_scripted": DEFAULT_PLOT_USER_TEMPLATE_SCRIPTED,
+    "perf_sys_prompt_music": DEFAULT_PERF_SYSTEM_PROMPT_MUSIC,
+    "perf_user_template_music": DEFAULT_PERF_USER_TEMPLATE_MUSIC,
+    "perf_sys_prompt_scripted": DEFAULT_PERF_SYSTEM_PROMPT_SCRIPTED,
+    "perf_user_template_scripted": DEFAULT_PERF_USER_TEMPLATE_SCRIPTED,
+    "concepts_bulk_template": BULK_PROMPT_TEMPLATE,
+    "concepts_vocals_template": ALL_VOCALS_PROMPT_TEMPLATE,
+    "concepts_scripted_template": SCRIPTED_PROMPT_TEMPLATE,
+    "bible_sys_prompt": CHARACTER_BIBLE_SYSTEM_PROMPT,
+    "bible_user_template": CHARACTER_BIBLE_USER_TEMPLATE,
+    "prompt_template": DEFAULT_CONCEPT_PROMPT,
+    "zimage_prompt_template": DEFAULT_ZIMAGE_PROMPT_CONVERSION_TEMPLATE,
+    "min_silence": 700,
+    "silence_thresh": -45,
+    "shot_mode": "Random",
+    "min_dur": 2,
+    "max_dur": 4,
+    "video_mode": "Intercut",
+    "firstframe_mode": "LTX-Native",
+    "llm_image_prompt_mode": "Use video prompt as-is",
+    "first_frame_reuse_mode": "Use cached prompt",
+    "vocal_prompt_mode": "Use Singer/Band Description",
+    "vocal_chain_mode": False,
+    "last_resolution": "1080p",
+    "last_versions": 1,
+    "last_camera_motion": "none",
+    "last_director": "None",
+    "last_style": "None",
+}
+
+# ==========================================
 # GLOBAL MEMORY
 # ==========================================
 GLOBAL_SETTINGS_FILE = "global_settings.json"
@@ -464,12 +533,13 @@ def save_global_llm(model_id):
         pass
 
 def load_global_url_settings():
-    global LTX_BASE_URL, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
+    global LTX_BASE_URL, LTX_AUTH_TOKEN, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
     try:
         if os.path.exists(GLOBAL_SETTINGS_FILE):
             with open(GLOBAL_SETTINGS_FILE, "r") as f:
                 data = json.load(f)
                 LTX_BASE_URL = data.get("ltx_base_url", LTX_BASE_URL)
+                LTX_AUTH_TOKEN = data.get("ltx_auth_token", LTX_AUTH_TOKEN)
                 LM_STUDIO_URL = data.get("lm_studio_url", LM_STUDIO_URL)
                 VIDEO_BACKEND = data.get("video_backend", VIDEO_BACKEND)
                 ELECTRICITY_COST = float(data.get("electricity_cost", ELECTRICITY_COST))
@@ -480,8 +550,9 @@ def load_global_url_settings():
 
 def save_global_url_settings(settings: dict):
     """Accept a settings dict and persist all global settings to disk."""
-    global LTX_BASE_URL, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
+    global LTX_BASE_URL, LTX_AUTH_TOKEN, LM_STUDIO_URL, VIDEO_BACKEND, ELECTRICITY_COST, SYSTEM_WATTAGE, GPU_MONITOR_INDEX
     LTX_BASE_URL = str(settings.get("ltx_base_url", LTX_BASE_URL)).strip()
+    LTX_AUTH_TOKEN = str(settings.get("ltx_auth_token", LTX_AUTH_TOKEN)).strip()
     LM_STUDIO_URL = str(settings.get("lm_studio_url", LM_STUDIO_URL)).strip()
     VIDEO_BACKEND = settings.get("video_backend", VIDEO_BACKEND)
     ELECTRICITY_COST = float(settings.get("electricity_cost", ELECTRICITY_COST))
@@ -495,17 +566,37 @@ def save_global_url_settings(settings: dict):
                 data = json.load(f)
         data.update({
             "ltx_base_url": LTX_BASE_URL,
+            "ltx_auth_token": LTX_AUTH_TOKEN,
             "lm_studio_url": LM_STUDIO_URL,
             "video_backend": VIDEO_BACKEND,
             "electricity_cost": ELECTRICITY_COST,
             "system_wattage": SYSTEM_WATTAGE,
             "gpu_monitor_index": GPU_MONITOR_INDEX,
         })
+        for key in GLOBALIZABLE_KEYS:
+            if key in settings:
+                data[key] = settings[key]
         with open(GLOBAL_SETTINGS_FILE, "w") as f:
             json.dump(data, f, indent=4)
         return "✅ Settings saved and applied."
     except Exception as e:
         return f"❌ Error saving settings: {e}"
+
+
+def get_global_defaults() -> dict:
+    """Return all GLOBALIZABLE_KEYS with values from global_settings.json,
+    falling back to hardcoded _CODE_DEFAULTS for any key not yet customised."""
+    result = dict(_CODE_DEFAULTS)
+    try:
+        if os.path.exists(GLOBAL_SETTINGS_FILE):
+            with open(GLOBAL_SETTINGS_FILE, "r") as f:
+                data = json.load(f)
+            for key in GLOBALIZABLE_KEYS:
+                if key in data:
+                    result[key] = data[key]
+    except Exception:
+        pass
+    return result
 
 
 def get_calibration_summary():
